@@ -175,6 +175,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			items[i] = versionItem{version: v, published: v.Published}
 		}
 		m.list.SetItems(items)
+		m.list.Select(0)
 		m.list.Title = fmt.Sprintf("Versions for %s", m.source)
 		m.state = stateVersionList
 
