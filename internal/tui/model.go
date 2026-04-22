@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattias-fjellstrom/terraform-provider-query/internal/registry"
 )
@@ -183,7 +184,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errorMsg = msg.err.Error()
 			return m, nil
 		}
-		m.viewport.SetContent(msg.notes)
+		rendered, err := glamour.Render(msg.notes, "auto")
+		if err != nil {
+			rendered = msg.notes
+		}
+		m.viewport.SetContent(rendered)
 		m.viewport.GotoTop()
 		m.state = stateReleaseNotes
 		m.errorMsg = ""
