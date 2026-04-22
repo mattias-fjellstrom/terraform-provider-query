@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
+	"time"
 )
 
 const baseURL = "https://registry.terraform.io/v1/providers"
@@ -89,7 +91,55 @@ func GetVersions(providerName string) ([]VersionInfo, string, error) {
 		return semverGT(data.Versions[i].Version, data.Versions[j].Version)
 	})
 
+	dates, _ := GetVersionPublishedDates(providerName)
+	for i := range data.Versions {
+		if d, ok := dates[data.Versions[i].Version]; ok {
+			data.Versions[i].Published = d
+		}
+	}
+
 	return data.Versions, source, nil
+}
+
+// GetVersionPublishedDates fetches published dates for provider versions from the
+// GitHub releases API and returns a map of version string to formatted date.
+func GetVersionPublishedDates(providerName string) (map[string]string, error) {
+	url := fmt.Sprintf(
+		"https://api.github.com/repos/hashicorp/terraform-provider-%s/releases?per_page=100",
+		providerName,
+	)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var releases []struct {
+		TagName     string `json:"tag_name"`
+		PublishedAt string `json:"published_at"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, err
+	}
+
+	dates := make(map[string]string, len(releases))
+	for _, r := range releases {
+		version := strings.TrimPrefix(r.TagName, "v")
+		if t, err := time.Parse(time.RFC3339, r.PublishedAt); err == nil {
+			dates[version] = t.Format("Jan 2, 2006")
+		}
+	}
+	return dates, nil
 }
 
 var semverDigits = regexp.MustCompile(`\d+`)

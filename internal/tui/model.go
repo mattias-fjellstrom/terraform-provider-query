@@ -49,7 +49,12 @@ type versionItem struct {
 }
 
 func (v versionItem) Title() string       { return v.version.Version }
-func (v versionItem) Description() string { return "published: " + v.published }
+func (v versionItem) Description() string {
+	if v.published == "" {
+		return ""
+	}
+	return "published: " + v.published
+}
 func (v versionItem) FilterValue() string { return v.version.Version }
 
 // Model is the bubbletea model for the TUI.
@@ -166,11 +171,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.source = msg.source
 		items := make([]list.Item, len(msg.versions))
 		for i, v := range msg.versions {
-			pub := v.Published
-			if pub == "" {
-				pub = "unknown"
-			}
-			items[i] = versionItem{version: v, published: pub}
+			items[i] = versionItem{version: v, published: v.Published}
 		}
 		m.list.SetItems(items)
 		m.list.Title = fmt.Sprintf("Versions for %s", m.source)
