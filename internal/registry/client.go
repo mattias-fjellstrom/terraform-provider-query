@@ -13,6 +13,15 @@ import (
 
 const baseURL = "https://registry.terraform.io/v1/providers"
 
+// ParseProvider splits an input string of the form "namespace/name" into its parts.
+// If no namespace is provided, it defaults to "hashicorp".
+func ParseProvider(input string) (namespace, name string) {
+	if idx := strings.Index(input, "/"); idx != -1 {
+		return input[:idx], input[idx+1:]
+	}
+	return "hashicorp", input
+}
+
 type VersionInfo struct {
 	Version   string `json:"version"`
 	Published string `json:"published_at"`
@@ -29,10 +38,9 @@ type VersionDetail struct {
 	Body    string `json:"body"`
 }
 
-// GetLatestVersion returns the latest version string for the given provider name
+// GetLatestVersion returns the latest version string for the given provider
 // by querying the provider metadata endpoint which includes the current latest version.
-func GetLatestVersion(providerName string) (string, string, error) {
-	namespace := "hashicorp"
+func GetLatestVersion(namespace, providerName string) (string, string, error) {
 	source := fmt.Sprintf("%s/%s", namespace, providerName)
 
 	url := fmt.Sprintf("%s/%s/%s", baseURL, namespace, providerName)
@@ -43,7 +51,7 @@ func GetLatestVersion(providerName string) (string, string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 404 {
-		return "", source, fmt.Errorf("provider %q not found in the Terraform registry under hashicorp namespace", providerName)
+		return "", source, fmt.Errorf("provider %q not found in the Terraform registry under %q namespace", providerName, namespace)
 	}
 	if resp.StatusCode != 200 {
 		return "", source, fmt.Errorf("registry returned status %d", resp.StatusCode)
@@ -63,9 +71,8 @@ func GetLatestVersion(providerName string) (string, string, error) {
 	return data.Version, source, nil
 }
 
-// GetVersions returns all available versions for the given provider under hashicorp namespace.
-func GetVersions(providerName string) ([]VersionInfo, string, error) {
-	namespace := "hashicorp"
+// GetVersions returns all available versions for the given provider under the given namespace.
+func GetVersions(namespace, providerName string) ([]VersionInfo, string, error) {
 	source := fmt.Sprintf("%s/%s", namespace, providerName)
 
 	url := fmt.Sprintf("%s/%s/%s/versions", baseURL, namespace, providerName)
@@ -91,7 +98,7 @@ func GetVersions(providerName string) ([]VersionInfo, string, error) {
 		return semverGT(data.Versions[i].Version, data.Versions[j].Version)
 	})
 
-	dates, _ := GetVersionPublishedDates(providerName)
+	dates, _ := GetVersionPublishedDates(namespace, providerName)
 	for i := range data.Versions {
 		if d, ok := dates[data.Versions[i].Version]; ok {
 			data.Versions[i].Published = d
@@ -103,9 +110,10 @@ func GetVersions(providerName string) ([]VersionInfo, string, error) {
 
 // GetVersionPublishedDates fetches published dates for provider versions from the
 // GitHub releases API and returns a map of version string to formatted date.
-func GetVersionPublishedDates(providerName string) (map[string]string, error) {
+func GetVersionPublishedDates(namespace, providerName string) (map[string]string, error) {
 	url := fmt.Sprintf(
-		"https://api.github.com/repos/hashicorp/terraform-provider-%s/releases?per_page=100",
+		"https://api.github.com/repos/%s/terraform-provider-%s/releases?per_page=100",
+		namespace,
 		providerName,
 	)
 	req, err := http.NewRequest("GET", url, nil)
@@ -159,8 +167,8 @@ func semverGT(a, b string) bool {
 }
 
 // GetReleaseNotes fetches the changelog/release notes for a provider version from GitHub.
-func GetReleaseNotes(providerName, version string) (string, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/hashicorp/terraform-provider-%s/releases/tags/v%s", providerName, version)
+func GetReleaseNotes(namespace, providerName, version string) (string, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/terraform-provider-%s/releases/tags/v%s", namespace, providerName, version)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err

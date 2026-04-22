@@ -65,6 +65,7 @@ type Model struct {
 	spinner       spinner.Model
 	list          list.Model
 	viewport      viewport.Model
+	namespace     string
 	providerName  string
 	source        string
 	selectedVer   string
@@ -74,9 +75,9 @@ type Model struct {
 
 func New() Model {
 	ti := textinput.New()
-	ti.Placeholder = "e.g. azurerm"
+	ti.Placeholder = "e.g. azurerm or integrations/github"
 	ti.Focus()
-	ti.CharLimit = 64
+	ti.CharLimit = 128
 	ti.Width = 40
 
 	sp := spinner.New()
@@ -132,20 +133,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			switch m.state {
 			case stateSearch:
-				name := strings.TrimSpace(m.input.Value())
-				if name == "" {
+				input := strings.TrimSpace(m.input.Value())
+				if input == "" {
 					return m, nil
 				}
+				namespace, name := registry.ParseProvider(input)
+				m.namespace = namespace
 				m.providerName = name
 				m.state = stateLoading
 				m.errorMsg = ""
-				return m, tea.Batch(m.spinner.Tick, fetchVersions(name))
+				return m, tea.Batch(m.spinner.Tick, fetchVersions(namespace, name))
 
 			case stateVersionList:
 				if item, ok := m.list.SelectedItem().(versionItem); ok {
 					m.selectedVer = item.version.Version
 					m.state = stateLoading
-					return m, tea.Batch(m.spinner.Tick, fetchReleaseNotes(m.providerName, m.selectedVer))
+					return m, tea.Batch(m.spinner.Tick, fetchReleaseNotes(m.namespace, m.providerName, m.selectedVer))
 				}
 			}
 
@@ -254,16 +257,16 @@ func (m Model) View() string {
 	return b.String()
 }
 
-func fetchVersions(providerName string) tea.Cmd {
+func fetchVersions(namespace, providerName string) tea.Cmd {
 	return func() tea.Msg {
-		versions, source, err := registry.GetVersions(providerName)
+		versions, source, err := registry.GetVersions(namespace, providerName)
 		return versionsLoadedMsg{versions: versions, source: source, err: err}
 	}
 }
 
-func fetchReleaseNotes(providerName, version string) tea.Cmd {
+func fetchReleaseNotes(namespace, providerName, version string) tea.Cmd {
 	return func() tea.Msg {
-		notes, err := registry.GetReleaseNotes(providerName, version)
+		notes, err := registry.GetReleaseNotes(namespace, providerName, version)
 		return releaseNotesLoadedMsg{notes: notes, err: err}
 	}
 }

@@ -32,8 +32,9 @@ Use --hcl to output an HCL required_providers block.`,
 			return nil
 		}
 
-		providerName := args[0]
-		version, source, err := registry.GetLatestVersion(providerName)
+		providerArg := args[0]
+		namespace, providerName := registry.ParseProvider(providerArg)
+		version, source, err := registry.GetLatestVersion(namespace, providerName)
 		if err != nil {
 			return err
 		}
