@@ -1,0 +1,25 @@
+# Binary output
+tpq
+tpq.exe
+
+# Go build artifacts
+*.test
+*.out
+dist/
+
+# Dependency vendor directory
+vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const baseURL = "https://registry.terraform.io/v1/providers"
+var baseURL = "https://registry.terraform.io/v1/providers"
 
 // ParseProvider splits an input string of the form "namespace/name" into its parts.
 // If no namespace is provided, it defaults to "hashicorp".
