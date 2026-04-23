@@ -22,6 +22,8 @@ const (
 	stateLoading
 	stateVersionList
 	stateReleaseNotes
+	stateDocList
+	stateDocView
 )
 
 var (
@@ -78,6 +80,19 @@ type providersLoadedMsg struct {
 	err       error
 }
 
+// docsLoadedMsg carries the list of documentation pages for a provider version.
+type docsLoadedMsg struct {
+	versionID string
+	docs      []registry.ProviderDoc
+	err       error
+}
+
+// docContentLoadedMsg carries the rendered markdown body of a single doc.
+type docContentLoadedMsg struct {
+	doc registry.ProviderDocContent
+	err error
+}
+
 // versionItem implements list.Item for displaying a version in the list.
 type versionItem struct {
 	version   registry.VersionInfo
@@ -103,6 +118,22 @@ func (p providerItem) Description() string {
 	return fmt.Sprintf("%s  •  %s downloads", tierBadge(p.provider.Tier), humanizeCount(p.provider.Downloads))
 }
 func (p providerItem) FilterValue() string { return p.provider.FullName() }
+
+// docItem implements list.Item for the documentation page list.
+type docItem struct {
+	doc registry.ProviderDoc
+}
+
+func (d docItem) Title() string { return d.doc.Title }
+func (d docItem) Description() string {
+	if d.doc.Subcategory != "" {
+		return fmt.Sprintf("%s  •  %s", d.doc.Category, d.doc.Subcategory)
+	}
+	return d.doc.Category
+}
+func (d docItem) FilterValue() string {
+	return d.doc.Category + " " + d.doc.Title + " " + d.doc.Subcategory
+}
 
 func humanizeCount(n int) string {
 	switch {
@@ -141,6 +172,14 @@ type Model struct {
 	selectedVer   string
 	errorMsg      string
 	width, height int
+
+	// Documentation
+	docList     list.Model
+	docs        []registry.ProviderDoc
+	docTitle    string
+	docCategory string
+	// versionIDCache maps "ns/name@version" -> registry provider-version id.
+	versionIDCache map[string]string
 }
 
 func New() Model {
@@ -166,17 +205,26 @@ func New() Model {
 	browse.SetFilteringEnabled(false)
 	browse.SetShowHelp(false)
 
+	docDelegate := list.NewDefaultDelegate()
+	docs := list.New([]list.Item{}, docDelegate, 0, 0)
+	docs.Title = "Documentation"
+	docs.SetShowStatusBar(false)
+	docs.SetFilteringEnabled(true)
+	docs.SetShowHelp(false)
+
 	vp := viewport.New(0, 0)
 
 	return Model{
-		state:        stateBrowse,
-		input:        ti,
-		spinner:      sp,
-		browseList:   browse,
-		versionList:  versions,
-		viewport:     vp,
-		tiersLoaded:  map[string]bool{},
-		tiersLoading: map[string]bool{registry.TierOfficial: true, registry.TierPartner: true},
+		state:          stateBrowse,
+		input:          ti,
+		spinner:        sp,
+		browseList:     browse,
+		versionList:    versions,
+		docList:        docs,
+		viewport:       vp,
+		tiersLoaded:    map[string]bool{},
+		tiersLoading:   map[string]bool{registry.TierOfficial: true, registry.TierPartner: true},
+		versionIDCache: map[string]string{},
 	}
 }
 
@@ -202,6 +250,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.browseList.SetSize(msg.Width, listHeight)
 		m.versionList.SetSize(msg.Width, msg.Height-6)
+		m.docList.SetSize(msg.Width, msg.Height-6)
 		m.viewport.Width = msg.Width
 		m.viewport.Height = msg.Height - 6
 
@@ -217,6 +266,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case stateReleaseNotes:
 				m.state = stateVersionList
 				return m, nil
+			case stateDocView:
+				m.state = stateDocList
+				return m, nil
+			case stateDocList:
+				if m.docList.FilterState() == list.Filtering {
+					break
+				}
+				m.state = stateVersionList
+				return m, nil
 			case stateVersionList:
 				m.state = stateBrowse
 				m.input.Focus()
@@ -226,6 +284,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			switch m.state {
 			case stateReleaseNotes:
+				m.state = stateVersionList
+				return m, nil
+			case stateDocView:
+				m.state = stateDocList
+				return m, nil
+			case stateDocList:
+				// Let the list handle esc when a filter is active or applied
+				// so it can clear the filter instead of popping the screen.
+				if m.docList.FilterState() != list.Unfiltered {
+					break
+				}
 				m.state = stateVersionList
 				return m, nil
 			case stateVersionList:
@@ -238,6 +307,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.applyFilter()
 				}
 				return m, nil
+			}
+
+		case "d":
+			if m.state == stateVersionList {
+				if item, ok := m.versionList.SelectedItem().(versionItem); ok {
+					m.selectedVer = item.version.Version
+					m.state = stateLoading
+					m.errorMsg = ""
+					return m, tea.Batch(m.spinner.Tick, fetchDocs(m.namespace, m.providerName, m.selectedVer, m.versionIDCache))
+				}
 			}
 
 		case "enter":
@@ -267,6 +346,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedVer = item.version.Version
 					m.state = stateLoading
 					return m, tea.Batch(m.spinner.Tick, fetchReleaseNotes(m.namespace, m.providerName, m.selectedVer))
+				}
+
+			case stateDocList:
+				// While the user is typing a filter, let the list capture enter
+				// to apply it rather than opening a doc.
+				if m.docList.FilterState() == list.Filtering {
+					break
+				}
+				if item, ok := m.docList.SelectedItem().(docItem); ok {
+					m.docTitle = item.doc.Title
+					m.docCategory = item.doc.Category
+					m.state = stateLoading
+					m.errorMsg = ""
+					return m, tea.Batch(m.spinner.Tick, fetchDocContent(item.doc.ID))
 				}
 			}
 
@@ -329,6 +422,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errorMsg = ""
 		return m, nil
 
+	case docsLoadedMsg:
+		if msg.err != nil {
+			m.state = stateVersionList
+			m.errorMsg = msg.err.Error()
+			return m, nil
+		}
+		m.docs = msg.docs
+		items := make([]list.Item, len(msg.docs))
+		for i, d := range msg.docs {
+			items[i] = docItem{doc: d}
+		}
+		m.docList.SetItems(items)
+		m.docList.ResetFilter()
+		m.docList.Select(0)
+		m.docList.Title = fmt.Sprintf("Docs for %s v%s", m.source, m.selectedVer)
+		m.state = stateDocList
+		m.errorMsg = ""
+		return m, nil
+
+	case docContentLoadedMsg:
+		if msg.err != nil {
+			m.state = stateDocList
+			m.errorMsg = msg.err.Error()
+			return m, nil
+		}
+		rendered, err := glamour.Render(msg.doc.Content, "auto")
+		if err != nil {
+			rendered = msg.doc.Content
+		}
+		m.viewport.SetContent(rendered)
+		m.viewport.GotoTop()
+		m.state = stateDocView
+		m.errorMsg = ""
+		return m, nil
+
 	case spinner.TickMsg:
 		if m.state == stateLoading {
 			var cmd tea.Cmd
@@ -357,7 +485,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.versionList, cmd = m.versionList.Update(msg)
 		return m, cmd
-	case stateReleaseNotes:
+	case stateDocList:
+		var cmd tea.Cmd
+		m.docList, cmd = m.docList.Update(msg)
+		return m, cmd
+	case stateReleaseNotes, stateDocView:
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
@@ -437,12 +569,24 @@ func (m Model) View() string {
 			b.WriteString(errorStyle.Render("Error: "+m.errorMsg) + "\n")
 		}
 		b.WriteString(m.versionList.View())
-		b.WriteString("\n" + helpStyle.Render("enter: view release notes • esc/q: back to providers"))
+		b.WriteString("\n" + helpStyle.Render("enter: release notes • d: documentation • esc/q: back to providers"))
 
 	case stateReleaseNotes:
 		b.WriteString(titleStyle.Render(fmt.Sprintf("Release notes: %s v%s", m.source, m.selectedVer)) + "\n\n")
 		b.WriteString(m.viewport.View())
 		b.WriteString("\n" + helpStyle.Render("↑/↓: scroll • esc/q: back to versions"))
+
+	case stateDocList:
+		if m.errorMsg != "" {
+			b.WriteString(errorStyle.Render("Error: "+m.errorMsg) + "\n")
+		}
+		b.WriteString(m.docList.View())
+		b.WriteString("\n" + helpStyle.Render("/: filter • enter: open doc • esc/q: back to versions"))
+
+	case stateDocView:
+		b.WriteString(titleStyle.Render(fmt.Sprintf("%s — %s (%s v%s)", m.docCategory, m.docTitle, m.source, m.selectedVer)) + "\n\n")
+		b.WriteString(m.viewport.View())
+		b.WriteString("\n" + helpStyle.Render("↑/↓: scroll • esc/q: back to documentation"))
 	}
 
 	return b.String()
@@ -466,5 +610,31 @@ func fetchProviders(tier string) tea.Cmd {
 	return func() tea.Msg {
 		providers, err := registry.GetProvidersByTier(tier)
 		return providersLoadedMsg{tier: tier, providers: providers, err: err}
+	}
+}
+
+func fetchDocs(namespace, providerName, version string, cache map[string]string) tea.Cmd {
+	return func() tea.Msg {
+		key := fmt.Sprintf("%s/%s@%s", namespace, providerName, version)
+		id, ok := cache[key]
+		if !ok {
+			var err error
+			id, err = registry.GetProviderVersionID(namespace, providerName, version)
+			if err != nil {
+				return docsLoadedMsg{err: err}
+			}
+			if cache != nil {
+				cache[key] = id
+			}
+		}
+		docs, err := registry.ListProviderDocs(id)
+		return docsLoadedMsg{versionID: id, docs: docs, err: err}
+	}
+}
+
+func fetchDocContent(docID string) tea.Cmd {
+	return func() tea.Msg {
+		doc, err := registry.GetProviderDoc(docID)
+		return docContentLoadedMsg{doc: doc, err: err}
 	}
 }
