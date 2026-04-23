@@ -18,6 +18,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - GitHub pull request template
 - Unit tests for registry and command packages
 
+### Changed
+- TUI browse view no longer fetches community-tier providers; only official and partner providers are listed
+
 ## [0.5.0] - 2026-04-22
 
 ### Added
