@@ -176,7 +176,7 @@ func New() Model {
 		versionList:  versions,
 		viewport:     vp,
 		tiersLoaded:  map[string]bool{},
-		tiersLoading: map[string]bool{registry.TierOfficial: true, registry.TierPartner: true, registry.TierCommunity: true},
+		tiersLoading: map[string]bool{registry.TierOfficial: true, registry.TierPartner: true},
 	}
 }
 
@@ -186,7 +186,6 @@ func (m Model) Init() tea.Cmd {
 		m.spinner.Tick,
 		fetchProviders(registry.TierOfficial),
 		fetchProviders(registry.TierPartner),
-		fetchProviders(registry.TierCommunity),
 	)
 }
 
@@ -337,7 +336,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		// Also tick while we're still loading provider tiers in the background.
-		if m.state == stateBrowse && (m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartner] || m.tiersLoading[registry.TierCommunity]) {
+		if m.state == stateBrowse && (m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartner]) {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
@@ -367,7 +366,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// sortProviders orders by tier (official, partner, community) then downloads desc.
+// sortProviders orders by tier (official, partner) then downloads desc.
 func (m *Model) sortProviders() {
 	sort.SliceStable(m.allProviders, func(i, j int) bool {
 		ri, rj := tierRank(m.allProviders[i].Tier), tierRank(m.allProviders[j].Tier)
@@ -398,9 +397,9 @@ func (m *Model) applyFilter() {
 
 func (m Model) browseStatusLine() string {
 	switch {
-	case m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartner] || m.tiersLoading[registry.TierCommunity]:
+	case m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartner]:
 		var pending []string
-		for _, t := range []string{registry.TierOfficial, registry.TierPartner, registry.TierCommunity} {
+		for _, t := range []string{registry.TierOfficial, registry.TierPartner} {
 			if m.tiersLoading[t] {
 				pending = append(pending, t)
 			}
