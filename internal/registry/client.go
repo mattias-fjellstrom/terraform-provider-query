@@ -14,6 +14,7 @@ import (
 var (
 	baseURL   = "https://registry.terraform.io/v1/providers"
 	v2BaseURL = "https://registry.terraform.io/v2/providers"
+	v2RootURL = "https://registry.terraform.io/v2"
 )
 
 // Tier values returned by the Terraform Registry v2 API.
@@ -251,6 +252,208 @@ func GetProvidersByTier(tier string) ([]Provider, error) {
 		return providers[i].Downloads > providers[j].Downloads
 	})
 	return providers, nil
+}
+
+// ProviderDoc is a lightweight representation of a single documentation
+// page for a provider version, suitable for listing in a TUI.
+type ProviderDoc struct {
+	ID          string
+	Category    string
+	Title       string
+	Slug        string
+	Subcategory string
+	Language    string
+	Path        string
+}
+
+// ProviderDocContent is a fully-fetched documentation page for a provider
+// version, including the markdown body.
+type ProviderDocContent struct {
+	ID       string
+	Title    string
+	Category string
+	Content  string
+}
+
+// providerWithVersionsPayload mirrors GET /v2/providers/{ns}/{name}?include=provider-versions.
+type providerWithVersionsPayload struct {
+	Included []struct {
+		Type       string `json:"type"`
+		ID         string `json:"id"`
+		Attributes struct {
+			Version string `json:"version"`
+		} `json:"attributes"`
+	} `json:"included"`
+}
+
+// GetProviderVersionID resolves a provider version string (e.g. "5.98.0")
+// to the Terraform Registry's internal numeric provider-version ID, which
+// is required by the documentation endpoints.
+func GetProviderVersionID(namespace, providerName, version string) (string, error) {
+	url := fmt.Sprintf("%s/%s/%s?include=provider-versions", v2BaseURL, namespace, providerName)
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
+		return "", fmt.Errorf("provider %q/%q not found", namespace, providerName)
+	}
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("registry returned status %d", resp.StatusCode)
+	}
+
+	var data providerWithVersionsPayload
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	for _, inc := range data.Included {
+		if inc.Type == "provider-versions" && inc.Attributes.Version == version {
+			return inc.ID, nil
+		}
+	}
+	return "", fmt.Errorf("version %q not found for provider %s/%s", version, namespace, providerName)
+}
+
+// providerVersionDocsPayload mirrors GET /v2/provider-versions/{id}?include=provider-docs.
+type providerVersionDocsPayload struct {
+	Included []struct {
+		Type       string `json:"type"`
+		ID         string `json:"id"`
+		Attributes struct {
+			Category    string  `json:"category"`
+			Language    string  `json:"language"`
+			Path        string  `json:"path"`
+			Slug        string  `json:"slug"`
+			Subcategory *string `json:"subcategory"`
+			Title       string  `json:"title"`
+		} `json:"attributes"`
+	} `json:"included"`
+}
+
+// docCategoryRank orders docs in a sensible reading order.
+func docCategoryRank(category string) int {
+	switch category {
+	case "overview":
+		return 0
+	case "guides":
+		return 1
+	case "resources":
+		return 2
+	case "data-sources":
+		return 3
+	case "ephemeral-resources":
+		return 4
+	case "functions":
+		return 5
+	case "actions":
+		return 6
+	default:
+		return 7
+	}
+}
+
+// ListProviderDocs returns all documentation pages for the given provider
+// version, restricted to the canonical HCL language so framework providers
+// don't show duplicate Python/TypeScript variants.
+func ListProviderDocs(versionID string) ([]ProviderDoc, error) {
+	url := fmt.Sprintf("%s/provider-versions/%s?include=provider-docs", v2RootURL, versionID)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
+		return nil, fmt.Errorf("provider version %q not found", versionID)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("registry returned status %d", resp.StatusCode)
+	}
+
+	var data providerVersionDocsPayload
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	docs := make([]ProviderDoc, 0, len(data.Included))
+	for _, inc := range data.Included {
+		if inc.Type != "provider-docs" {
+			continue
+		}
+		if inc.Attributes.Language != "" && inc.Attributes.Language != "hcl" {
+			continue
+		}
+		sub := ""
+		if inc.Attributes.Subcategory != nil {
+			sub = *inc.Attributes.Subcategory
+		}
+		docs = append(docs, ProviderDoc{
+			ID:          inc.ID,
+			Category:    inc.Attributes.Category,
+			Title:       inc.Attributes.Title,
+			Slug:        inc.Attributes.Slug,
+			Subcategory: sub,
+			Language:    inc.Attributes.Language,
+			Path:        inc.Attributes.Path,
+		})
+	}
+
+	sort.SliceStable(docs, func(i, j int) bool {
+		ri, rj := docCategoryRank(docs[i].Category), docCategoryRank(docs[j].Category)
+		if ri != rj {
+			return ri < rj
+		}
+		if docs[i].Category != docs[j].Category {
+			return docs[i].Category < docs[j].Category
+		}
+		return strings.ToLower(docs[i].Title) < strings.ToLower(docs[j].Title)
+	})
+
+	return docs, nil
+}
+
+// providerDocPayload mirrors GET /v2/provider-docs/{id}.
+type providerDocPayload struct {
+	Data struct {
+		ID         string `json:"id"`
+		Attributes struct {
+			Category string `json:"category"`
+			Title    string `json:"title"`
+			Content  string `json:"content"`
+		} `json:"attributes"`
+	} `json:"data"`
+}
+
+// GetProviderDoc fetches the markdown body of a single documentation page.
+func GetProviderDoc(docID string) (ProviderDocContent, error) {
+	url := fmt.Sprintf("%s/provider-docs/%s", v2RootURL, docID)
+	resp, err := http.Get(url)
+	if err != nil {
+		return ProviderDocContent{}, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
+		return ProviderDocContent{}, fmt.Errorf("doc %q not found", docID)
+	}
+	if resp.StatusCode != 200 {
+		return ProviderDocContent{}, fmt.Errorf("registry returned status %d", resp.StatusCode)
+	}
+
+	var data providerDocPayload
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return ProviderDocContent{}, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return ProviderDocContent{
+		ID:       data.Data.ID,
+		Title:    data.Data.Attributes.Title,
+		Category: data.Data.Attributes.Category,
+		Content:  data.Data.Attributes.Content,
+	}, nil
 }
 
 // GetReleaseNotes fetches the changelog/release notes for a provider version from GitHub.

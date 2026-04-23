@@ -63,7 +63,11 @@ the list focused and the load fast:
   substring match).
 - Use the arrow keys to highlight a provider, and press `enter` to drop into
   the **versions** screen for that provider.
-- Press `enter` on a version to view its release notes.
+- On a version, press `enter` to view its release notes, or `d` to open the
+  **documentation** browser for that version.
+- In the documentation browser, press `/` to fuzzy-filter the list of
+  resources, data sources, ephemeral resources, actions, functions, and
+  guides. Press `enter` on a doc to render its page.
 - `esc` clears the filter (or returns to the previous screen).
 - `ctrl+c` quits.
 

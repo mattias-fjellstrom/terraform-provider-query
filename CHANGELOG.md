@@ -17,6 +17,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - GitHub issue templates (bug report, feature request)
 - GitHub pull request template
 - Unit tests for registry and command packages
+- TUI documentation browser: press `d` on a version to list its docs
+  (resources, data sources, ephemeral resources, actions, functions,
+  guides, overview), fuzzy-filter with `/`, and render any page in a
+  scrollable Markdown viewport
 
 ### Changed
 - TUI browse view no longer fetches community-tier providers; only official and partner providers are listed
