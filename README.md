@@ -54,6 +54,22 @@ Launch the interactive terminal UI to browse and search Terraform providers:
 tpq
 ```
 
+The TUI opens to a **browse** screen with a search input and a list of every
+provider in the Terraform Registry, grouped by tier (official, partner,
+community) and sorted by downloads:
+
+- Start typing to filter the list by `namespace/name` (case-insensitive
+  substring match).
+- Use the arrow keys to highlight a provider, and press `enter` to drop into
+  the **versions** screen for that provider.
+- Press `enter` on a version to view its release notes.
+- `esc` clears the filter (or returns to the previous screen).
+- `ctrl+c` quits.
+
+Official and partner providers appear immediately; the larger community list
+loads in the background, with a status line showing progress. You can start
+typing and selecting before community providers finish loading.
+
 ### Look up a specific provider
 
 Print the latest version of a provider:

@@ -2,6 +2,7 @@ package registry
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -137,5 +138,78 @@ func TestGetVersions(t *testing.T) {
 	}
 	if versions[2].Version != "5.96.0" {
 		t.Errorf("last version: got %q, want %q", versions[2].Version, "5.96.0")
+	}
+}
+
+func TestGetProvidersByTier(t *testing.T) {
+	type attr struct {
+		Namespace string `json:"namespace"`
+		Name      string `json:"name"`
+		Tier      string `json:"tier"`
+		Downloads int    `json:"downloads"`
+	}
+	type item struct {
+		Attributes attr `json:"attributes"`
+	}
+	pages := [][]item{
+		{
+			{Attributes: attr{Namespace: "hashicorp", Name: "aws", Tier: "official", Downloads: 100}},
+			{Attributes: attr{Namespace: "hashicorp", Name: "azurerm", Tier: "official", Downloads: 300}},
+		},
+		{
+			{Attributes: attr{Namespace: "hashicorp", Name: "google", Tier: "official", Downloads: 200}},
+		},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.URL.Query().Get("filter[tier]"), "official"; got != want {
+			t.Errorf("tier filter: got %q, want %q", got, want)
+		}
+		page := r.URL.Query().Get("page[number]")
+		if page == "" {
+			page = "1"
+		}
+		var idx int
+		fmt.Sscanf(page, "%d", &idx)
+		if idx < 1 || idx > len(pages) {
+			http.NotFound(w, r)
+			return
+		}
+		var next *int
+		if idx < len(pages) {
+			n := idx + 1
+			next = &n
+		}
+		resp := map[string]any{
+			"data": pages[idx-1],
+			"meta": map[string]any{
+				"pagination": map[string]any{"next-page": next},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	orig := v2BaseURL
+	v2BaseURL = srv.URL
+	defer func() { v2BaseURL = orig }()
+
+	got, err := GetProvidersByTier(TierOfficial)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 providers (pagination followed), got %d", len(got))
+	}
+	// Sorted by downloads desc: azurerm(300), google(200), aws(100).
+	wantOrder := []string{"azurerm", "google", "aws"}
+	for i, w := range wantOrder {
+		if got[i].Name != w {
+			t.Errorf("idx %d: got %q, want %q", i, got[i].Name, w)
+		}
+	}
+	if got[0].FullName() != "hashicorp/azurerm" {
+		t.Errorf("FullName: got %q, want %q", got[0].FullName(), "hashicorp/azurerm")
 	}
 }

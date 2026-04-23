@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -17,7 +18,7 @@ import (
 type state int
 
 const (
-	stateSearch state = iota
+	stateBrowse state = iota
 	stateLoading
 	stateVersionList
 	stateReleaseNotes
@@ -28,7 +29,34 @@ var (
 	subtitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	helpStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+
+	officialBadge  = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("official")
+	partnerBadge   = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Render("partner")
+	communityBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("community")
 )
+
+func tierBadge(tier string) string {
+	switch tier {
+	case registry.TierOfficial:
+		return officialBadge
+	case registry.TierPartner:
+		return partnerBadge
+	default:
+		return communityBadge
+	}
+}
+
+// tierRank orders official < partner < community for stable secondary sorting.
+func tierRank(tier string) int {
+	switch tier {
+	case registry.TierOfficial:
+		return 0
+	case registry.TierPartner:
+		return 1
+	default:
+		return 2
+	}
+}
 
 // versionsLoadedMsg carries the loaded version list.
 type versionsLoadedMsg struct {
@@ -43,13 +71,20 @@ type releaseNotesLoadedMsg struct {
 	err   error
 }
 
+// providersLoadedMsg carries providers fetched for a single tier.
+type providersLoadedMsg struct {
+	tier      string
+	providers []registry.Provider
+	err       error
+}
+
 // versionItem implements list.Item for displaying a version in the list.
 type versionItem struct {
 	version   registry.VersionInfo
 	published string
 }
 
-func (v versionItem) Title() string       { return v.version.Version }
+func (v versionItem) Title() string { return v.version.Version }
 func (v versionItem) Description() string {
 	if v.published == "" {
 		return ""
@@ -58,12 +93,47 @@ func (v versionItem) Description() string {
 }
 func (v versionItem) FilterValue() string { return v.version.Version }
 
+// providerItem implements list.Item for the browse list.
+type providerItem struct {
+	provider registry.Provider
+}
+
+func (p providerItem) Title() string { return p.provider.FullName() }
+func (p providerItem) Description() string {
+	return fmt.Sprintf("%s  •  %s downloads", tierBadge(p.provider.Tier), humanizeCount(p.provider.Downloads))
+}
+func (p providerItem) FilterValue() string { return p.provider.FullName() }
+
+func humanizeCount(n int) string {
+	switch {
+	case n >= 1_000_000_000:
+		return fmt.Sprintf("%.1fB", float64(n)/1_000_000_000)
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	case n >= 1_000:
+		return fmt.Sprintf("%.1fK", float64(n)/1_000)
+	default:
+		return fmt.Sprintf("%d", n)
+	}
+}
+
 // Model is the bubbletea model for the TUI.
 type Model struct {
-	state         state
-	input         textinput.Model
+	state state
+
+	// Browse state
+	input          textinput.Model
+	browseList     list.Model
+	allProviders   []registry.Provider
+	tiersLoaded    map[string]bool
+	tiersLoading   map[string]bool
+	loadedCount    int
+	browseErr      string
+	lastFilterText string
+
+	// Versions / release notes
 	spinner       spinner.Model
-	list          list.Model
+	versionList   list.Model
 	viewport      viewport.Model
 	namespace     string
 	providerName  string
@@ -75,33 +145,49 @@ type Model struct {
 
 func New() Model {
 	ti := textinput.New()
-	ti.Placeholder = "e.g. azurerm or integrations/github"
+	ti.Placeholder = "type to filter providers (e.g. azurerm, integrations/github)"
 	ti.Focus()
 	ti.CharLimit = 128
-	ti.Width = 40
+	ti.Width = 60
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("63"))
 
-	delegate := list.NewDefaultDelegate()
-	l := list.New([]list.Item{}, delegate, 0, 0)
-	l.Title = "Versions"
-	l.SetShowStatusBar(false)
+	versionDelegate := list.NewDefaultDelegate()
+	versions := list.New([]list.Item{}, versionDelegate, 0, 0)
+	versions.Title = "Versions"
+	versions.SetShowStatusBar(false)
+
+	browseDelegate := list.NewDefaultDelegate()
+	browse := list.New([]list.Item{}, browseDelegate, 0, 0)
+	browse.Title = "Providers"
+	browse.SetShowStatusBar(false)
+	browse.SetFilteringEnabled(false)
+	browse.SetShowHelp(false)
 
 	vp := viewport.New(0, 0)
 
 	return Model{
-		state:   stateSearch,
-		input:   ti,
-		spinner: sp,
-		list:    l,
-		viewport: vp,
+		state:        stateBrowse,
+		input:        ti,
+		spinner:      sp,
+		browseList:   browse,
+		versionList:  versions,
+		viewport:     vp,
+		tiersLoaded:  map[string]bool{},
+		tiersLoading: map[string]bool{registry.TierOfficial: true, registry.TierPartner: true, registry.TierCommunity: true},
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return textinput.Blink
+	return tea.Batch(
+		textinput.Blink,
+		m.spinner.Tick,
+		fetchProviders(registry.TierOfficial),
+		fetchProviders(registry.TierPartner),
+		fetchProviders(registry.TierCommunity),
+	)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -109,30 +195,63 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.list.SetSize(msg.Width, msg.Height-6)
+		m.input.Width = msg.Width - 4
+		// Reserve room for: title (1) + blank (1) + input (1) + blank (1) + status (1) + help (2)
+		listHeight := msg.Height - 8
+		if listHeight < 3 {
+			listHeight = 3
+		}
+		m.browseList.SetSize(msg.Width, listHeight)
+		m.versionList.SetSize(msg.Width, msg.Height-6)
 		m.viewport.Width = msg.Width
 		m.viewport.Height = msg.Height - 6
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "q":
-			if m.state == stateSearch {
-				return m, tea.Quit
-			}
-			if m.state == stateReleaseNotes {
+		case "ctrl+c":
+			return m, tea.Quit
+
+		case "q":
+			switch m.state {
+			case stateBrowse:
+				// Don't quit on 'q' here so users can type 'q' in the filter.
+			case stateReleaseNotes:
 				m.state = stateVersionList
 				return m, nil
-			}
-			if m.state == stateVersionList {
-				m.state = stateSearch
-				m.input.SetValue("")
+			case stateVersionList:
+				m.state = stateBrowse
 				m.input.Focus()
 				return m, textinput.Blink
 			}
 
+		case "esc":
+			switch m.state {
+			case stateReleaseNotes:
+				m.state = stateVersionList
+				return m, nil
+			case stateVersionList:
+				m.state = stateBrowse
+				m.input.Focus()
+				return m, textinput.Blink
+			case stateBrowse:
+				if m.input.Value() != "" {
+					m.input.SetValue("")
+					m.applyFilter()
+				}
+				return m, nil
+			}
+
 		case "enter":
 			switch m.state {
-			case stateSearch:
+			case stateBrowse:
+				if item, ok := m.browseList.SelectedItem().(providerItem); ok {
+					m.namespace = item.provider.Namespace
+					m.providerName = item.provider.Name
+					m.state = stateLoading
+					m.errorMsg = ""
+					return m, tea.Batch(m.spinner.Tick, fetchVersions(m.namespace, m.providerName))
+				}
+				// Fallback: treat the input as ns/name and look it up directly.
 				input := strings.TrimSpace(m.input.Value())
 				if input == "" {
 					return m, nil
@@ -145,29 +264,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.spinner.Tick, fetchVersions(namespace, name))
 
 			case stateVersionList:
-				if item, ok := m.list.SelectedItem().(versionItem); ok {
+				if item, ok := m.versionList.SelectedItem().(versionItem); ok {
 					m.selectedVer = item.version.Version
 					m.state = stateLoading
 					return m, tea.Batch(m.spinner.Tick, fetchReleaseNotes(m.namespace, m.providerName, m.selectedVer))
 				}
 			}
 
-		case "esc":
-			switch m.state {
-			case stateReleaseNotes:
-				m.state = stateVersionList
-				return m, nil
-			case stateVersionList:
-				m.state = stateSearch
-				m.input.SetValue("")
-				m.input.Focus()
-				return m, textinput.Blink
+		case "up", "down", "pgup", "pgdown", "home", "end":
+			// In the browse state, route navigation keys to the list so the
+			// text input doesn't swallow them.
+			if m.state == stateBrowse {
+				var cmd tea.Cmd
+				m.browseList, cmd = m.browseList.Update(msg)
+				return m, cmd
 			}
 		}
 
+	case providersLoadedMsg:
+		m.tiersLoading[msg.tier] = false
+		m.tiersLoaded[msg.tier] = true
+		if msg.err != nil {
+			if m.browseErr == "" {
+				m.browseErr = fmt.Sprintf("failed to load %s providers: %v", msg.tier, msg.err)
+			}
+		} else {
+			m.allProviders = append(m.allProviders, msg.providers...)
+			m.loadedCount = len(m.allProviders)
+			m.sortProviders()
+			m.applyFilter()
+		}
+		return m, nil
+
 	case versionsLoadedMsg:
 		if msg.err != nil {
-			m.state = stateSearch
+			m.state = stateBrowse
 			m.errorMsg = msg.err.Error()
 			m.input.Focus()
 			return m, textinput.Blink
@@ -177,10 +308,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, v := range msg.versions {
 			items[i] = versionItem{version: v, published: v.Published}
 		}
-		m.list.SetItems(items)
-		m.list.Select(0)
-		m.list.Title = fmt.Sprintf("Versions for %s", m.source)
+		m.versionList.SetItems(items)
+		m.versionList.Select(0)
+		m.versionList.Title = fmt.Sprintf("Versions for %s", m.source)
 		m.state = stateVersionList
+		return m, nil
 
 	case releaseNotesLoadedMsg:
 		if msg.err != nil {
@@ -196,6 +328,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.GotoTop()
 		m.state = stateReleaseNotes
 		m.errorMsg = ""
+		return m, nil
 
 	case spinner.TickMsg:
 		if m.state == stateLoading {
@@ -203,17 +336,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
 		}
+		// Also tick while we're still loading provider tiers in the background.
+		if m.state == stateBrowse && (m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartner] || m.tiersLoading[registry.TierCommunity]) {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			return m, cmd
+		}
 	}
 
-	// Delegate to active sub-component
+	// Delegate to the active sub-component.
 	switch m.state {
-	case stateSearch:
+	case stateBrowse:
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
+		// Re-filter when the input value changed.
+		if m.input.Value() != m.lastFilterText {
+			m.applyFilter()
+		}
 		return m, cmd
 	case stateVersionList:
 		var cmd tea.Cmd
-		m.list, cmd = m.list.Update(msg)
+		m.versionList, cmd = m.versionList.Update(msg)
 		return m, cmd
 	case stateReleaseNotes:
 		var cmd tea.Cmd
@@ -224,17 +367,66 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// sortProviders orders by tier (official, partner, community) then downloads desc.
+func (m *Model) sortProviders() {
+	sort.SliceStable(m.allProviders, func(i, j int) bool {
+		ri, rj := tierRank(m.allProviders[i].Tier), tierRank(m.allProviders[j].Tier)
+		if ri != rj {
+			return ri < rj
+		}
+		return m.allProviders[i].Downloads > m.allProviders[j].Downloads
+	})
+}
+
+// applyFilter rebuilds the browse list items from allProviders using the
+// current input value as a case-insensitive substring filter on namespace/name.
+func (m *Model) applyFilter() {
+	q := strings.ToLower(strings.TrimSpace(m.input.Value()))
+	m.lastFilterText = m.input.Value()
+
+	items := make([]list.Item, 0, len(m.allProviders))
+	for _, p := range m.allProviders {
+		if q == "" || strings.Contains(strings.ToLower(p.FullName()), q) {
+			items = append(items, providerItem{provider: p})
+		}
+	}
+	m.browseList.SetItems(items)
+	if len(items) > 0 {
+		m.browseList.Select(0)
+	}
+}
+
+func (m Model) browseStatusLine() string {
+	switch {
+	case m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartner] || m.tiersLoading[registry.TierCommunity]:
+		var pending []string
+		for _, t := range []string{registry.TierOfficial, registry.TierPartner, registry.TierCommunity} {
+			if m.tiersLoading[t] {
+				pending = append(pending, t)
+			}
+		}
+		return subtitleStyle.Render(fmt.Sprintf("%s loading %s… %d providers loaded", m.spinner.View(), strings.Join(pending, ", "), m.loadedCount))
+	default:
+		return subtitleStyle.Render(fmt.Sprintf("%d providers loaded", m.loadedCount))
+	}
+}
+
 func (m Model) View() string {
 	var b strings.Builder
 
 	switch m.state {
-	case stateSearch:
+	case stateBrowse:
 		b.WriteString(titleStyle.Render("Terraform Provider Query") + "\n\n")
-		b.WriteString("Provider name: " + m.input.View() + "\n\n")
-		if m.errorMsg != "" {
-			b.WriteString(errorStyle.Render("Error: "+m.errorMsg) + "\n\n")
+		b.WriteString(m.input.View() + "\n")
+		b.WriteString(m.browseStatusLine() + "\n")
+		if m.browseErr != "" {
+			b.WriteString(errorStyle.Render(m.browseErr) + "\n")
 		}
-		b.WriteString(helpStyle.Render("enter: search • q/ctrl+c: quit"))
+		if m.errorMsg != "" {
+			b.WriteString(errorStyle.Render("Error: "+m.errorMsg) + "\n")
+		}
+		b.WriteString(m.browseList.View())
+		b.WriteString("\n" + helpStyle.Render("type to filter • ↑/↓: select • enter: open • esc: clear filter • ctrl+c: quit"))
 
 	case stateLoading:
 		b.WriteString(titleStyle.Render("Terraform Provider Query") + "\n\n")
@@ -245,8 +437,8 @@ func (m Model) View() string {
 		if m.errorMsg != "" {
 			b.WriteString(errorStyle.Render("Error: "+m.errorMsg) + "\n")
 		}
-		b.WriteString(m.list.View())
-		b.WriteString("\n" + helpStyle.Render("enter: view release notes • esc/q: back to search"))
+		b.WriteString(m.versionList.View())
+		b.WriteString("\n" + helpStyle.Render("enter: view release notes • esc/q: back to providers"))
 
 	case stateReleaseNotes:
 		b.WriteString(titleStyle.Render(fmt.Sprintf("Release notes: %s v%s", m.source, m.selectedVer)) + "\n\n")
@@ -268,5 +460,12 @@ func fetchReleaseNotes(namespace, providerName, version string) tea.Cmd {
 	return func() tea.Msg {
 		notes, err := registry.GetReleaseNotes(namespace, providerName, version)
 		return releaseNotesLoadedMsg{notes: notes, err: err}
+	}
+}
+
+func fetchProviders(tier string) tea.Cmd {
+	return func() tea.Msg {
+		providers, err := registry.GetProvidersByTier(tier)
+		return providersLoadedMsg{tier: tier, providers: providers, err: err}
 	}
 }

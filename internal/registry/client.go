@@ -11,7 +11,30 @@ import (
 	"time"
 )
 
-var baseURL = "https://registry.terraform.io/v1/providers"
+var (
+	baseURL   = "https://registry.terraform.io/v1/providers"
+	v2BaseURL = "https://registry.terraform.io/v2/providers"
+)
+
+// Tier values returned by the Terraform Registry v2 API.
+const (
+	TierOfficial  = "official"
+	TierPartner   = "partner"
+	TierCommunity = "community"
+)
+
+// Provider is a lightweight representation of a provider listed in the
+// Terraform Registry, suitable for browsing.
+type Provider struct {
+	Namespace   string
+	Name        string
+	Tier        string
+	Downloads   int
+	Description string
+}
+
+// FullName returns "namespace/name".
+func (p Provider) FullName() string { return p.Namespace + "/" + p.Name }
 
 // ParseProvider splits an input string of the form "namespace/name" into its parts.
 // If no namespace is provided, it defaults to "hashicorp".
@@ -164,6 +187,70 @@ func semverGT(a, b string) bool {
 		}
 	}
 	return len(aParts) > len(bParts)
+}
+
+// providersV2Page is the JSON shape returned by GET /v2/providers.
+type providersV2Page struct {
+	Data []struct {
+		Attributes struct {
+			Namespace   string `json:"namespace"`
+			Name        string `json:"name"`
+			Tier        string `json:"tier"`
+			Downloads   int    `json:"downloads"`
+			Description string `json:"description"`
+		} `json:"attributes"`
+	} `json:"data"`
+	Meta struct {
+		Pagination struct {
+			NextPage *int `json:"next-page"`
+		} `json:"pagination"`
+	} `json:"meta"`
+}
+
+// GetProvidersByTier returns all providers in the given tier (official,
+// partner, or community) sorted by download count descending.
+func GetProvidersByTier(tier string) ([]Provider, error) {
+	const pageSize = 100
+	var providers []Provider
+
+	page := 1
+	for {
+		url := fmt.Sprintf("%s?filter%%5Btier%%5D=%s&page%%5Bsize%%5D=%d&page%%5Bnumber%%5D=%d", v2BaseURL, tier, pageSize, page)
+		resp, err := http.Get(url)
+		if err != nil {
+			return nil, fmt.Errorf("request failed: %w", err)
+		}
+		var data providersV2Page
+		if resp.StatusCode != 200 {
+			resp.Body.Close()
+			return nil, fmt.Errorf("registry returned status %d", resp.StatusCode)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+		resp.Body.Close()
+
+		for _, d := range data.Data {
+			providers = append(providers, Provider{
+				Namespace:   d.Attributes.Namespace,
+				Name:        d.Attributes.Name,
+				Tier:        d.Attributes.Tier,
+				Downloads:   d.Attributes.Downloads,
+				Description: d.Attributes.Description,
+			})
+		}
+
+		if data.Meta.Pagination.NextPage == nil {
+			break
+		}
+		page = *data.Meta.Pagination.NextPage
+	}
+
+	sort.Slice(providers, func(i, j int) bool {
+		return providers[i].Downloads > providers[j].Downloads
+	})
+	return providers, nil
 }
 
 // GetReleaseNotes fetches the changelog/release notes for a provider version from GitHub.
