@@ -16,7 +16,7 @@ started and what to expect when contributing to this project.
 
 ## Prerequisites
 
-- **Go 1.21 or later** — see [golang.org/dl](https://golang.org/dl/) or install via Homebrew:
+- **Go 1.24 or later** (only the three latest minor versions are tested) — see [golang.org/dl](https://golang.org/dl/) or install via Homebrew:
   ```bash
   brew install go
   ```
