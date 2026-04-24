@@ -12,9 +12,21 @@ import (
 )
 
 var (
-	baseURL   = "https://registry.terraform.io/v1/providers"
-	v2BaseURL = "https://registry.terraform.io/v2/providers"
+	baseURL      = "https://registry.terraform.io/v1/providers"
+	v2BaseURL    = "https://registry.terraform.io/v2/providers"
+	registryHost = "https://registry.terraform.io"
 )
+
+// fullLogoURL converts a relative logo path from the v2 API into an absolute URL.
+func fullLogoURL(relative string) string {
+	if relative == "" {
+		return ""
+	}
+	if strings.HasPrefix(relative, "http://") || strings.HasPrefix(relative, "https://") {
+		return relative
+	}
+	return registryHost + relative
+}
 
 // Tier values returned by the Terraform Registry v2 API.
 const (
@@ -31,6 +43,7 @@ type Provider struct {
 	Tier        string
 	Downloads   int
 	Description string
+	LogoURL     string
 }
 
 // FullName returns "namespace/name".
@@ -198,6 +211,7 @@ type providersV2Page struct {
 			Tier        string `json:"tier"`
 			Downloads   int    `json:"downloads"`
 			Description string `json:"description"`
+			LogoURL     string `json:"logo-url"`
 		} `json:"attributes"`
 	} `json:"data"`
 	Meta struct {
@@ -238,6 +252,7 @@ func GetProvidersByTier(tier string) ([]Provider, error) {
 				Tier:        d.Attributes.Tier,
 				Downloads:   d.Attributes.Downloads,
 				Description: d.Attributes.Description,
+				LogoURL:     fullLogoURL(d.Attributes.LogoURL),
 			})
 		}
 

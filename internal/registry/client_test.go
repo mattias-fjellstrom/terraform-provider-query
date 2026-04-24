@@ -142,23 +142,48 @@ func TestGetVersions(t *testing.T) {
 }
 
 
+func TestFullLogoURL(t *testing.T) {
+	origHost := registryHost
+	registryHost = "https://registry.terraform.io"
+	defer func() { registryHost = origHost }()
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"", ""},
+		{"/images/providers/aws.png", "https://registry.terraform.io/images/providers/aws.png"},
+		{"https://example.com/logo.png", "https://example.com/logo.png"},
+		{"http://example.com/logo.png", "http://example.com/logo.png"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := fullLogoURL(tt.input)
+			if got != tt.want {
+				t.Errorf("fullLogoURL(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGetProvidersByTier(t *testing.T) {
 	type attr struct {
 		Namespace string `json:"namespace"`
 		Name      string `json:"name"`
 		Tier      string `json:"tier"`
 		Downloads int    `json:"downloads"`
+		LogoURL   string `json:"logo-url"`
 	}
 	type item struct {
 		Attributes attr `json:"attributes"`
 	}
 	pages := [][]item{
 		{
-			{Attributes: attr{Namespace: "hashicorp", Name: "aws", Tier: "official", Downloads: 100}},
-			{Attributes: attr{Namespace: "hashicorp", Name: "azurerm", Tier: "official", Downloads: 300}},
+			{Attributes: attr{Namespace: "hashicorp", Name: "aws", Tier: "official", Downloads: 100, LogoURL: "/images/providers/aws.png"}},
+			{Attributes: attr{Namespace: "hashicorp", Name: "azurerm", Tier: "official", Downloads: 300, LogoURL: "/images/providers/azure.png"}},
 		},
 		{
-			{Attributes: attr{Namespace: "hashicorp", Name: "google", Tier: "official", Downloads: 200}},
+			{Attributes: attr{Namespace: "hashicorp", Name: "google", Tier: "official", Downloads: 200, LogoURL: "/images/providers/google-cloud.svg"}},
 		},
 	}
 
@@ -196,6 +221,10 @@ func TestGetProvidersByTier(t *testing.T) {
 	v2BaseURL = srv.URL
 	defer func() { v2BaseURL = orig }()
 
+	origHost := registryHost
+	registryHost = "https://registry.terraform.io"
+	defer func() { registryHost = origHost }()
+
 	got, err := GetProvidersByTier(TierOfficial)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -212,5 +241,12 @@ func TestGetProvidersByTier(t *testing.T) {
 	}
 	if got[0].FullName() != "hashicorp/azurerm" {
 		t.Errorf("FullName: got %q, want %q", got[0].FullName(), "hashicorp/azurerm")
+	}
+	// Verify LogoURL is parsed and expanded to a full URL.
+	if got[0].LogoURL != "https://registry.terraform.io/images/providers/azure.png" {
+		t.Errorf("LogoURL[0]: got %q, want %q", got[0].LogoURL, "https://registry.terraform.io/images/providers/azure.png")
+	}
+	if got[2].LogoURL != "https://registry.terraform.io/images/providers/aws.png" {
+		t.Errorf("LogoURL[2]: got %q, want %q", got[2].LogoURL, "https://registry.terraform.io/images/providers/aws.png")
 	}
 }

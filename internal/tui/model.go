@@ -71,6 +71,12 @@ type releaseNotesLoadedMsg struct {
 	err   error
 }
 
+// logoLoadedMsg carries the rendered logo string for a provider.
+type logoLoadedMsg struct {
+	url      string
+	rendered string
+}
+
 // providersLoadedMsg carries providers fetched for a single tier.
 type providersLoadedMsg struct {
 	tier      string
@@ -143,6 +149,9 @@ type Model struct {
 	statusMsg     string
 	width, height int
 
+	// Provider logo
+	providerLogoURL      string
+	providerLogoRendered string
 }
 
 func New() Model {
@@ -211,9 +220,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			listHeight = 3
 		}
 		m.browseList.SetSize(msg.Width, listHeight)
-		// Other views also render the persistent header, so reserve the
-		// same vertical space on top of the per-state chrome.
-		m.versionList.SetSize(msg.Width, listHeight)
+		// The version list view may also display a provider logo above
+		// the list. Reserve extra vertical space for the logo (8 rows + 2 blanks).
+		versionListHeight := listHeight
+		if m.providerLogoRendered != "" {
+			versionListHeight -= logoRenderRows + 2
+			if versionListHeight < 3 {
+				versionListHeight = 3
+			}
+		}
+		m.versionList.SetSize(msg.Width, versionListHeight)
 		m.viewport.Width = msg.Width
 		m.viewport.Height = listHeight
 	case tea.KeyMsg:
@@ -252,6 +268,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = stateBrowse
 				m.statusMsg = ""
 				m.errorMsg = ""
+				m.providerLogoURL = ""
+				m.providerLogoRendered = ""
 				m.input.Focus()
 				return m, textinput.Blink
 			}
@@ -265,6 +283,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = stateBrowse
 				m.statusMsg = ""
 				m.errorMsg = ""
+				m.providerLogoURL = ""
+				m.providerLogoRendered = ""
 				m.input.Focus()
 				return m, textinput.Blink
 			case stateBrowse:
@@ -296,9 +316,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if item, ok := m.browseList.SelectedItem().(providerItem); ok {
 					m.namespace = item.provider.Namespace
 					m.providerName = item.provider.Name
+					m.providerLogoURL = item.provider.LogoURL
+					m.providerLogoRendered = ""
 					m.state = stateLoading
 					m.errorMsg = ""
-					return m, tea.Batch(m.spinner.Tick, fetchVersions(m.namespace, m.providerName))
+					return m, tea.Batch(m.spinner.Tick, fetchVersions(m.namespace, m.providerName), fetchProviderLogo(item.provider.LogoURL))
 				}
 				// Fallback: treat the input as ns/name and look it up directly.
 				input := strings.TrimSpace(m.input.Value())
@@ -308,6 +330,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				namespace, name := registry.ParseProvider(input)
 				m.namespace = namespace
 				m.providerName = name
+				m.providerLogoURL = ""
+				m.providerLogoRendered = ""
 				m.state = stateLoading
 				m.errorMsg = ""
 				return m, tea.Batch(m.spinner.Tick, fetchVersions(namespace, name))
@@ -342,6 +366,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loadedCount = len(m.allProviders)
 			m.sortProviders()
 			m.applyFilter()
+		}
+		return m, nil
+
+	case logoLoadedMsg:
+		if msg.url == m.providerLogoURL {
+			m.providerLogoRendered = msg.rendered
+			// Re-layout the version list to account for logo height.
+			if m.width > 0 && m.height > 0 {
+				const headerReserve = 8
+				listHeight := m.height - headerReserve
+				if m.providerLogoRendered != "" {
+					listHeight -= logoRenderRows + 2
+				}
+				if listHeight < 3 {
+					listHeight = 3
+				}
+				m.versionList.SetSize(m.width, listHeight)
+			}
 		}
 		return m, nil
 
@@ -504,6 +546,9 @@ func (m Model) View() string {
 		b.WriteString(m.renderHelp("ctrl+c: quit"))
 
 	case stateVersionList:
+		if m.providerLogoRendered != "" {
+			b.WriteString(m.providerLogoRendered + "\n\n")
+		}
 		if m.errorMsg != "" {
 			b.WriteString(errorStyle.Render("Error: "+m.errorMsg) + "\n")
 		} else if m.statusMsg != "" {
@@ -539,5 +584,12 @@ func fetchProviders(tier string) tea.Cmd {
 	return func() tea.Msg {
 		providers, err := registry.GetProvidersByTier(tier)
 		return providersLoadedMsg{tier: tier, providers: providers, err: err}
+	}
+}
+
+func fetchProviderLogo(url string) tea.Cmd {
+	return func() tea.Msg {
+		rendered := fetchLogo(url)
+		return logoLoadedMsg{url: url, rendered: rendered}
 	}
 }
