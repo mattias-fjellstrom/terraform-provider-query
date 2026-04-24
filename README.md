@@ -2,6 +2,8 @@
 
 `tpq` is an interactive terminal UI (TUI) for browsing the Terraform registry — searching providers, exploring their versions, reading release notes, and viewing provider documentation, all without leaving your terminal.
 
+![Made with VHS](https://vhs.charm.sh/vhs-4G3eH1NqimkvlCIMI3HoOh.gif)
+
 ## Install
 
 ### macOS (Homebrew)
