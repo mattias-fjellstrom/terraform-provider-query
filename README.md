@@ -1,6 +1,6 @@
 # Terraform Provider Query
 
-`tpq` is a CLI tool for querying the Terraform registry for provider versions. It supports an interactive TUI mode as well as direct command-line lookups with optional HCL output.
+`tpq` is a CLI tool for querying the Terraform registry for provider versions. It supports an interactive TUI mode as well as direct command-line lookups.
 
 ## Prerequisites
 
@@ -75,25 +75,4 @@ Print the latest version of a provider:
 
 ```bash
 tpq hashicorp/aws
-```
-
-### Output an HCL block
-
-Use the `--hcl` flag to output a ready-to-paste `required_providers` block:
-
-```bash
-tpq --hcl hashicorp/aws
-```
-
-Example output:
-
-```hcl
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "5.98.0"
-    }
-  }
-}
 ```

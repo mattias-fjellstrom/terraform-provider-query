@@ -15,8 +15,6 @@ func executeCommand(args ...string) (string, error) {
 	rootCmd.SetOut(buf)
 	rootCmd.SetErr(buf)
 	rootCmd.SetArgs(args)
-	// Reset hclFlag before each run
-	hclFlag = false
 	err := rootCmd.Execute()
 	return buf.String(), err
 }
@@ -29,16 +27,6 @@ func TestRootCmdHelp(t *testing.T) {
 	}
 	if !strings.Contains(output, "tpq") {
 		t.Errorf("help output does not contain 'tpq': %s", output)
-	}
-}
-
-func TestRootCmdHclFlagRegistered(t *testing.T) {
-	flag := rootCmd.Flags().Lookup("hcl")
-	if flag == nil {
-		t.Fatal("--hcl flag is not registered on the root command")
-	}
-	if flag.DefValue != "false" {
-		t.Errorf("--hcl default value: got %q, want %q", flag.DefValue, "false")
 	}
 }
 

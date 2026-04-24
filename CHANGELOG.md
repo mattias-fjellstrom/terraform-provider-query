@@ -25,6 +25,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - TUI browse view no longer fetches community-tier providers; only official and partner providers are listed
 
+### Removed
+- TUI usage snippet view (`u` shortcut from the version list)
+- `--hcl` CLI flag for outputting HCL required_providers blocks
+
 ## [0.5.0] - 2026-04-22
 
 ### Added
@@ -52,5 +56,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Initial implementation with interactive TUI and CLI modes
-- `--hcl` flag to output a ready-to-paste `required_providers` block
 - Query the Terraform registry for the latest provider version

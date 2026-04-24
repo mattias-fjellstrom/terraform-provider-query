@@ -22,7 +22,6 @@ const (
 	stateLoading
 	stateVersionList
 	stateReleaseNotes
-	stateSnippet
 )
 
 var (
@@ -144,12 +143,6 @@ type Model struct {
 	statusMsg     string
 	width, height int
 
-	// Rendered terraform-block snippet for the version the user most
-	// recently asked to "use" (via the `u` shortcut from the version
-	// list). Computed on-demand when entering stateSnippet so the
-	// version-list view never pays the cost of running glamour.
-	snippetVersion  string
-	snippetRendered string
 }
 
 func New() Model {
@@ -223,11 +216,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.versionList.SetSize(msg.Width, listHeight)
 		m.viewport.Width = msg.Width
 		m.viewport.Height = listHeight
-		// Width changed, drop the cached snippet so it gets re-rendered
-		// at the new width the next time the user presses `u`.
-		m.snippetVersion = ""
-		m.snippetRendered = ""
-
 	case tea.KeyMsg:
 		// While the version list is in its built-in filter mode, let the
 		// list.Model handle keystrokes itself so that `/`, typing, `esc`
@@ -257,7 +245,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.state {
 			case stateBrowse:
 				// Don't quit on 'q' here so users can type 'q' in the filter.
-			case stateReleaseNotes, stateSnippet:
+			case stateReleaseNotes:
 				m.state = stateVersionList
 				return m, nil
 			case stateVersionList:
@@ -270,7 +258,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "esc":
 			switch m.state {
-			case stateReleaseNotes, stateSnippet:
+			case stateReleaseNotes:
 				m.state = stateVersionList
 				return m, nil
 			case stateVersionList:
@@ -283,18 +271,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.input.Value() != "" {
 					m.input.SetValue("")
 					m.applyFilter()
-				}
-				return m, nil
-			}
-
-		case "u":
-			if m.state == stateVersionList {
-				if item, ok := m.versionList.SelectedItem().(versionItem); ok {
-					m.selectedVer = item.version.Version
-					m.renderSnippet(item.version.Version)
-					m.state = stateSnippet
-					m.errorMsg = ""
-					m.statusMsg = ""
 				}
 				return m, nil
 			}
@@ -390,8 +366,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateVersionList
 		m.statusMsg = ""
 		m.errorMsg = ""
-		m.snippetVersion = ""
-		m.snippetRendered = ""
 		return m, nil
 
 	case releaseNotesLoadedMsg:
@@ -536,110 +510,15 @@ func (m Model) View() string {
 			b.WriteString(statusStyle.Render(m.statusMsg) + "\n")
 		}
 		b.WriteString(m.versionList.View())
-		b.WriteString("\n" + m.renderHelp("enter: release notes • u: show usage snippet • d: open docs in browser • /: filter • esc: clear filter / back to providers • q: back to providers"))
+		b.WriteString("\n" + m.renderHelp("enter: release notes • d: open docs in browser • /: filter • esc: clear filter / back to providers • q: back to providers"))
 
 	case stateReleaseNotes:
 		b.WriteString(subtitleStyle.Render(fmt.Sprintf("Release notes: %s v%s", m.source, m.selectedVer)) + "\n\n")
 		b.WriteString(m.viewport.View())
 		b.WriteString("\n" + m.renderHelp("↑/↓: scroll • esc/q: back to versions"))
-
-	case stateSnippet:
-		b.WriteString(subtitleStyle.Render(fmt.Sprintf("Usage snippet: %s v%s", m.source, m.selectedVer)) + "\n\n")
-		b.WriteString(m.snippetRendered)
-		b.WriteString("\n" + m.renderHelp("esc/q: back to versions"))
 	}
 
 	return b.String()
-}
-
-// buildTerraformBlock returns the HCL `terraform { required_providers { ... } }`
-// snippet for the given provider and version. The local name in
-// `required_providers` uses the provider's short name (e.g. `aws` for
-// `hashicorp/aws`), matching the convention shown in the Terraform Registry.
-func buildTerraformBlock(namespace, name, version string) string {
-	return fmt.Sprintf(`terraform {
-  required_providers {
-    %s = {
-      source  = "%s/%s"
-      version = "%s"
-    }
-  }
-}
-`, name, namespace, name, version)
-}
-
-// renderTerraformSnippet wraps the HCL block in a Markdown ```hcl fence and
-// renders it through glamour so it gets syntax highlighting that matches the
-// release-notes view. Falls back to the plain HCL on any error.
-func renderTerraformSnippet(namespace, name, version string, width int) string {
-	body := buildTerraformBlock(namespace, name, version)
-	md := "```hcl\n" + body + "```\n"
-	if width <= 0 {
-		width = 80
-	}
-	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(width),
-	)
-	if err != nil {
-		return body
-	}
-	out, err := r.Render(md)
-	if err != nil {
-		return body
-	}
-	return trimCommonIndent(out)
-}
-
-// trimCommonIndent removes the minimum common leading whitespace from all
-// non-empty lines so that glamour's code-block margin does not produce
-// unwanted padding when the snippet is selected/copied.
-func trimCommonIndent(s string) string {
-	lines := strings.Split(s, "\n")
-
-	// Find the smallest indent across non-blank lines.
-	minIndent := -1
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		indent := len(line) - len(strings.TrimLeft(line, " "))
-		if minIndent < 0 || indent < minIndent {
-			minIndent = indent
-		}
-	}
-	if minIndent <= 0 {
-		return s
-	}
-
-	var b strings.Builder
-	for i, line := range lines {
-		if i > 0 {
-			b.WriteByte('\n')
-		}
-		if len(line) >= minIndent {
-			b.WriteString(line[minIndent:])
-		} else {
-			b.WriteString(line)
-		}
-	}
-	return b.String()
-}
-
-// renderSnippet renders (and caches) the terraform-block snippet for the
-// given version. Called when the user presses `u` from the version list to
-// open the on-demand snippet view, so the version list itself never pays
-// the cost of running glamour.
-func (m *Model) renderSnippet(version string) {
-	if version == m.snippetVersion && m.snippetRendered != "" {
-		return
-	}
-	width := m.width
-	if width <= 0 {
-		width = 80
-	}
-	m.snippetVersion = version
-	m.snippetRendered = renderTerraformSnippet(m.namespace, m.providerName, version, width)
 }
 
 func fetchVersions(namespace, providerName string) tea.Cmd {
