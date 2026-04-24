@@ -201,11 +201,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.input.Width = msg.Width - 4
-		// Reserve room for: header (logo ~4 rows) + blank (1) + input (1)
-		// + blank (1) + status (1) + help (2). The header collapses to a
-		// single line on narrow terminals — we conservatively reserve the
-		// full height regardless so layout stays stable across resizes.
-		const headerReserve = 11
+		// Reserve room for: header (1) + blank (1) + input (1) + blank (1)
+		// + status (1) + help (2). The header is now a single emoji row
+		// instead of multi-line ASCII art.
+		const headerReserve = 8
 		listHeight := msg.Height - headerReserve
 		if listHeight < 3 {
 			listHeight = 3
