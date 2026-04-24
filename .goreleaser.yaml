@@ -43,21 +43,17 @@ release:
     owner: mattias-fjellstrom
     name: terraform-provider-query
 
-brews:
+homebrew_casks:
   - name: tpq
+    binaries:
+      - tpq
     repository:
       owner: mattias-fjellstrom
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Formula
     homepage: "https://github.com/mattias-fjellstrom/terraform-provider-query"
     description: "CLI for querying the Terraform registry for provider versions."
-    license: "MPL-2.0"
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com
-    commit_msg_template: "chore(brew): bump {{ .ProjectName }} to {{ .Tag }}"
-    install: |
-      bin.install "tpq"
-    test: |
-      system "#{bin}/tpq", "--help"
+    commit_msg_template: "chore(cask): bump {{ .ProjectName }} to {{ .Tag }}"
