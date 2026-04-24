@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	baseURL   = "https://registry.terraform.io/v1/providers"
-	v2BaseURL = "https://registry.terraform.io/v2/providers"
+	baseURL          = "https://registry.terraform.io/v1/providers"
+	v2BaseURL        = "https://registry.terraform.io/v2/providers"
+	githubAPIBaseURL = "https://api.github.com"
 )
 
 // Tier values returned by the Terraform Registry v2 API.
@@ -102,7 +103,8 @@ func GetVersions(namespace, providerName string) ([]VersionInfo, string, error) 
 // GitHub releases API and returns a map of version string to formatted date.
 func GetVersionPublishedDates(namespace, providerName string) (map[string]string, error) {
 	url := fmt.Sprintf(
-		"https://api.github.com/repos/%s/terraform-provider-%s/releases?per_page=100",
+		"%s/repos/%s/terraform-provider-%s/releases?per_page=100",
+		githubAPIBaseURL,
 		namespace,
 		providerName,
 	)
@@ -111,6 +113,9 @@ func GetVersionPublishedDates(namespace, providerName string) (map[string]string
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
+	if token, ok := gitHubToken(); ok {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -222,12 +227,15 @@ func GetProvidersByTier(tier string) ([]Provider, error) {
 
 // GetReleaseNotes fetches the changelog/release notes for a provider version from GitHub.
 func GetReleaseNotes(namespace, providerName, version string) (string, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/terraform-provider-%s/releases/tags/v%s", namespace, providerName, version)
+	url := fmt.Sprintf("%s/repos/%s/terraform-provider-%s/releases/tags/v%s", githubAPIBaseURL, namespace, providerName, version)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
+	if token, ok := gitHubToken(); ok {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
