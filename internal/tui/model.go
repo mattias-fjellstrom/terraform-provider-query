@@ -259,7 +259,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.errorMsg = fmt.Sprintf("failed to open browser: %v", err)
 						m.statusMsg = ""
 					} else {
-						m.statusMsg = "opened: " + url
+						m.statusMsg = ""
 						m.errorMsg = ""
 					}
 					return m, nil
