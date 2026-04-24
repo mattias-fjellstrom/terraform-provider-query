@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-You need **Go 1.21 or later** installed. The easiest way to install Go on a Mac is via [Homebrew](https://brew.sh):
+You need **Go 1.24 or later** installed. This project is only tested with the three latest minor versions of Go (currently 1.24, 1.25, and 1.26). The easiest way to install Go on a Mac is via [Homebrew](https://brew.sh):
 
 ```bash
 brew install go
