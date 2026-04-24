@@ -213,6 +213,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.Height = msg.Height - 6
 
 	case tea.KeyMsg:
+		// While the version list is in its built-in filter mode, let the
+		// list.Model handle keystrokes itself so that `/`, typing, `esc`
+		// (cancel filter), and `enter` (apply filter) work as expected.
+		// Otherwise our own back-navigation steals these keys and the user
+		// gets stuck inside the filter prompt.
+		if m.state == stateVersionList {
+			fs := m.versionList.FilterState()
+			if fs == list.Filtering || fs == list.FilterApplied {
+				// Always let the list handle keys while typing a filter.
+				// Once the filter has been applied, only delegate the keys
+				// the list itself uses for filter management (esc/`/`) so
+				// our `enter`/`d`/`q` shortcuts continue to work on the
+				// filtered selection.
+				if fs == list.Filtering || msg.String() == "esc" || msg.String() == "/" {
+					var cmd tea.Cmd
+					m.versionList, cmd = m.versionList.Update(msg)
+					return m, cmd
+				}
+			}
+		}
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
@@ -333,6 +353,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, v := range msg.versions {
 			items[i] = versionItem{version: v, published: v.Published}
 		}
+		// Clear any filter carried over from a previously-viewed provider
+		// before swapping in the new items.
+		m.versionList.ResetFilter()
 		m.versionList.SetItems(items)
 		m.versionList.Select(0)
 		m.versionList.Title = fmt.Sprintf("Versions for %s", m.source)
@@ -469,7 +492,7 @@ func (m Model) View() string {
 			b.WriteString(statusStyle.Render(m.statusMsg) + "\n")
 		}
 		b.WriteString(m.versionList.View())
-		b.WriteString("\n" + helpStyle.Render("enter: release notes • d: open docs in browser • esc/q: back to providers"))
+		b.WriteString("\n" + helpStyle.Render("enter: release notes • d: open docs in browser • /: filter • esc: clear filter / back to providers • q: back to providers"))
 
 	case stateReleaseNotes:
 		b.WriteString(titleStyle.Render(fmt.Sprintf("Release notes: %s v%s", m.source, m.selectedVer)) + "\n\n")
