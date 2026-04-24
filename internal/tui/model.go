@@ -25,7 +25,6 @@ const (
 )
 
 var (
-	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63"))
 	subtitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	helpStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
@@ -202,17 +201,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.input.Width = msg.Width - 4
-		// Reserve room for: title (1) + blank (1) + input (1) + blank (1) + status (1) + help (2)
-		listHeight := msg.Height - 8
+		// Reserve room for: header (logo ~4 rows) + blank (1) + input (1)
+		// + blank (1) + status (1) + help (2). The header collapses to a
+		// single line on narrow terminals — we conservatively reserve the
+		// full height regardless so layout stays stable across resizes.
+		const headerReserve = 11
+		listHeight := msg.Height - headerReserve
 		if listHeight < 3 {
 			listHeight = 3
 		}
 		m.browseList.SetSize(msg.Width, listHeight)
-		// Other views also render the persistent header (title + blank line),
-		// so reserve space for it on top of the per-state chrome.
-		m.versionList.SetSize(msg.Width, msg.Height-8)
+		// Other views also render the persistent header, so reserve the
+		// same vertical space on top of the per-state chrome.
+		m.versionList.SetSize(msg.Width, listHeight)
 		m.viewport.Width = msg.Width
-		m.viewport.Height = msg.Height - 8
+		m.viewport.Height = listHeight
 
 	case tea.KeyMsg:
 		// While the version list is in its built-in filter mode, let the
@@ -469,8 +472,9 @@ func (m Model) View() string {
 	var b strings.Builder
 
 	// Persistent application header rendered for every state so the user
-	// always knows which app they are in.
-	b.WriteString(titleStyle.Render("Terraform Provider Query") + "\n\n")
+	// always knows which app they are in. Includes the code-built Terraform
+	// logo alongside the title.
+	b.WriteString(header(m.width) + "\n\n")
 
 	switch m.state {
 	case stateBrowse:
