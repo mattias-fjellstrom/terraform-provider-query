@@ -20,6 +20,8 @@ To upgrade to the latest release:
 brew upgrade mattias-fjellstrom/tap/tpq
 ```
 
+Note that the binary is currently not signed using an Apple Developer ID, which means it might get flagged as a security risk. Install at your own peril! 
+
 ### Linux and Windows (pre-built binary)
 
 Pre-built binaries for Linux and Windows (both `amd64` and `arm64`) are
