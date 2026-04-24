@@ -1,6 +1,6 @@
 # Terraform Provider Query
 
-`tpq` is a CLI tool for querying the Terraform registry for provider versions. It supports an interactive TUI mode as well as direct command-line lookups.
+`tpq` is an interactive terminal UI (TUI) for browsing the Terraform registry — searching providers, exploring their versions, reading release notes, and viewing provider documentation, all without leaving your terminal.
 
 ## Install
 
@@ -78,13 +78,15 @@ cp tpq /usr/local/bin/tpq
 
 ## Usage
 
-### Interactive TUI
-
-Launch the interactive terminal UI to browse and search Terraform providers:
+Launch `tpq` to open the terminal UI:
 
 ```bash
 tpq
 ```
+
+`tpq` is a TUI-only application — there are no command-line lookup modes or
+flags for one-shot queries. The only flags are `--version` (print the version
+and exit) and `--help`.
 
 The TUI opens to a **browse** screen with a search input and a list of
 official and partner providers from the Terraform Registry, grouped by tier

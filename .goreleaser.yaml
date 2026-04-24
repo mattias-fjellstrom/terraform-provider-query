@@ -52,7 +52,7 @@ homebrew_casks:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/mattias-fjellstrom/terraform-provider-query"
-    description: "CLI for querying the Terraform registry for provider versions."
+    description: "Interactive TUI for browsing the Terraform registry."
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com

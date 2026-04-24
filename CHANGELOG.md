@@ -28,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 - TUI usage snippet view (`u` shortcut from the version list)
 - `--hcl` CLI flag for outputting HCL required_providers blocks
+- All non-interactive CLI lookup modes; `tpq` is now a TUI-only application
+  (only `--version` and `--help` flags remain)
 
 ## [0.5.0] - 2026-04-22
 
