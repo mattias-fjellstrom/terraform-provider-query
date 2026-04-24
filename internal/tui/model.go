@@ -527,7 +527,9 @@ func (m *Model) applyFilter() {
 	}
 }
 
-func (m Model) browseStatusLine() string {
+// browseListTitle returns the title for the providers list, including the
+// loaded count (and a spinner with pending tiers while still loading).
+func (m Model) browseListTitle() string {
 	switch {
 	case m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartner]:
 		var pending []string
@@ -536,9 +538,9 @@ func (m Model) browseStatusLine() string {
 				pending = append(pending, t)
 			}
 		}
-		return subtitleStyle.Render(fmt.Sprintf("%s loading %s… %d providers loaded", m.spinner.View(), strings.Join(pending, ", "), m.loadedCount))
+		return fmt.Sprintf("Providers (%d loaded — %s loading %s…)", m.loadedCount, m.spinner.View(), strings.Join(pending, ", "))
 	default:
-		return subtitleStyle.Render(fmt.Sprintf("%d providers loaded", m.loadedCount))
+		return fmt.Sprintf("Providers (%d loaded)", m.loadedCount)
 	}
 }
 
@@ -548,14 +550,14 @@ func (m Model) View() string {
 	switch m.state {
 	case stateBrowse:
 		b.WriteString(titleStyle.Render("Terraform Provider Query") + "\n\n")
-		b.WriteString(m.input.View() + "\n")
-		b.WriteString(m.browseStatusLine() + "\n")
+		b.WriteString(m.input.View() + "\n\n")
 		if m.browseErr != "" {
 			b.WriteString(errorStyle.Render(m.browseErr) + "\n")
 		}
 		if m.errorMsg != "" {
 			b.WriteString(errorStyle.Render("Error: "+m.errorMsg) + "\n")
 		}
+		m.browseList.Title = m.browseListTitle()
 		b.WriteString(m.browseList.View())
 		b.WriteString("\n" + helpStyle.Render("type to filter • ↑/↓: select • enter: open • esc: clear filter • ctrl+c: quit"))
 
