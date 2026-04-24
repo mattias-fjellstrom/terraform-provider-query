@@ -23,3 +23,8 @@ go.work.sum
 # OS
 .DS_Store
 Thumbs.db
+
+# VHS demo recordings (keep demo.tape, ignore generated artifacts)
+demo.gif
+demo.mp4
+demo.webm

@@ -98,3 +98,37 @@ Use the **Bug report** issue template. Include:
 
 Use the **Feature request** issue template. Describe the use-case and the
 behaviour you would like to see before discussing implementation.
+
+## Recording the README demo
+
+The animated/video demo embedded in the README is generated from
+[`demo.tape`](./demo.tape) using [VHS](https://github.com/charmbracelet/vhs).
+The script is committed; the rendered output is git-ignored.
+
+Install VHS (macOS):
+
+```bash
+brew install vhs
+```
+
+Render the demo from the repo root:
+
+```bash
+vhs demo.tape
+```
+
+This produces `demo.gif`, `demo.mp4`, and `demo.webm`. None of these are
+committed — pick one of the following hosting options and reference it from
+`README.md`:
+
+- **`vhs publish demo.gif`** — uploads to Charm's CDN and prints a
+  `https://vhs.charm.sh/...gif` URL. Simplest option, used by the current
+  README.
+- **GitHub user-attachments** — open a new issue or PR comment and drag
+  `demo.mp4` into it. GitHub uploads the file and yields a
+  `https://github.com/user-attachments/assets/<id>` URL that auto-embeds as a
+  `<video>` player when pasted on its own line.
+
+Prefer MP4 over GIF when self-hosting — it is typically 5–10× smaller for the
+same clip. Keep the recording short (≤ 20 s) and the terminal modestly sized
+so the file stays small.
