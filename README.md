@@ -64,10 +64,8 @@ the list focused and the load fast:
 - Use the arrow keys to highlight a provider, and press `enter` to drop into
   the **versions** screen for that provider.
 - On a version, press `enter` to view its release notes, or `d` to open the
-  **documentation** browser for that version.
-- In the documentation browser, press `/` to fuzzy-filter the list of
-  resources, data sources, ephemeral resources, actions, functions, and
-  guides. Press `enter` on a doc to render its page.
+  documentation page for that version on the Terraform Registry website
+  (in your default browser).
 - `esc` clears the filter (or returns to the previous screen).
 - `ctrl+c` quits.
 
