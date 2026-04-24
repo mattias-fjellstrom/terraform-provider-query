@@ -2,23 +2,56 @@
 
 `tpq` is a CLI tool for querying the Terraform registry for provider versions. It supports an interactive TUI mode as well as direct command-line lookups.
 
-## Prerequisites
+## Install
 
-You need **Go 1.24 or later** installed. This project is only tested with the three latest minor versions of Go (currently 1.24, 1.25, and 1.26). The easiest way to install Go on a Mac is via [Homebrew](https://brew.sh):
+### macOS (Homebrew)
 
-```bash
-brew install go
-```
-
-Alternatively, download the installer from [golang.org/dl](https://golang.org/dl/).
-
-Verify your installation:
+`tpq` is published as a [Homebrew](https://brew.sh) cask via the
+[`mattias-fjellstrom/homebrew-tap`](https://github.com/mattias-fjellstrom/homebrew-tap)
+tap:
 
 ```bash
-go version
+brew install mattias-fjellstrom/tap/tpq
 ```
 
-## Build
+To upgrade to the latest release:
+
+```bash
+brew upgrade mattias-fjellstrom/tap/tpq
+```
+
+### Linux and Windows (pre-built binary)
+
+Pre-built binaries for Linux and Windows (both `amd64` and `arm64`) are
+attached to each release on the
+[releases page](https://github.com/mattias-fjellstrom/terraform-provider-query/releases).
+
+1. Download the archive for your operating system and architecture
+   (`.tar.gz` for Linux, `.zip` for Windows).
+2. Extract the `tpq` binary from the archive.
+3. Move it to a directory on your `PATH`, for example:
+
+   ```bash
+   # Linux
+   sudo mv tpq /usr/local/bin/tpq
+   ```
+
+   On Windows, place `tpq.exe` in a folder that is included in your `PATH`
+   environment variable.
+
+Verify the installation:
+
+```bash
+tpq --help
+```
+
+### Build from source
+
+If you'd rather build `tpq` yourself, you need **Go 1.24 or later** installed.
+This project is only tested with the three latest minor versions of Go
+(currently 1.24, 1.25, and 1.26). On macOS the easiest way to install Go is
+via Homebrew (`brew install go`); on other systems use
+[golang.org/dl](https://golang.org/dl/).
 
 Clone the repository and build the binary:
 
@@ -28,17 +61,14 @@ cd terraform-provider-query
 go build -o tpq .
 ```
 
-This produces a `tpq` binary in the current directory.
-
-## Install
-
-To install `tpq` to your Go binary directory (typically `~/go/bin`, which should be on your `PATH`):
+Then either install it to your Go binary directory (typically `~/go/bin`,
+which should be on your `PATH`):
 
 ```bash
 go install .
 ```
 
-Or copy the binary you built to a directory that is already on your `PATH`, for example:
+…or copy the binary you built to a directory that is already on your `PATH`:
 
 ```bash
 cp tpq /usr/local/bin/tpq
