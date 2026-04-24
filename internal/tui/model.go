@@ -147,6 +147,14 @@ type Model struct {
 	versionListWidth  int
 	snippetPaneWidth  int
 	snippetPaneHeight int
+
+	// Cached terraform-block snippet for the currently-selected version.
+	// Recomputed in Update when the selection or pane width changes; View
+	// only reads it. This avoids calling glamour.NewTermRenderer (which
+	// queries the terminal for background color via escape sequences) on
+	// every redraw, which interferes with bubbletea's screen management.
+	snippetVersion  string
+	snippetRendered string
 }
 
 func New() Model {
@@ -239,6 +247,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.versionList.SetSize(listWidth, listHeight)
 		m.viewport.Width = msg.Width
 		m.viewport.Height = listHeight
+		// Width changed, drop the snippet cache so it gets re-rendered
+		// at the new pane width on the next refresh.
+		m.snippetVersion = ""
+		m.snippetRendered = ""
+		m.refreshSnippet()
 
 	case tea.KeyMsg:
 		// While the version list is in its built-in filter mode, let the
@@ -390,6 +403,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateVersionList
 		m.statusMsg = ""
 		m.errorMsg = ""
+		m.snippetVersion = ""
+		m.refreshSnippet()
 		return m, nil
 
 	case releaseNotesLoadedMsg:
@@ -435,6 +450,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateVersionList:
 		var cmd tea.Cmd
 		m.versionList, cmd = m.versionList.Update(msg)
+		m.refreshSnippet()
 		return m, cmd
 	case stateReleaseNotes:
 		var cmd tea.Cmd
@@ -584,23 +600,40 @@ func renderTerraformSnippet(namespace, name, version string, width int) string {
 	return out
 }
 
+// refreshSnippet recomputes the cached terraform-block snippet whenever the
+// currently-selected version changes (or after a resize). View() reads the
+// cache directly so it never has to call glamour during a redraw.
+func (m *Model) refreshSnippet() {
+	if m.snippetPaneWidth <= 0 {
+		m.snippetRendered = ""
+		m.snippetVersion = ""
+		return
+	}
+	item, ok := m.versionList.SelectedItem().(versionItem)
+	if !ok {
+		m.snippetRendered = ""
+		m.snippetVersion = ""
+		return
+	}
+	if item.version.Version == m.snippetVersion && m.snippetRendered != "" {
+		return
+	}
+	m.snippetVersion = item.version.Version
+	m.snippetRendered = renderTerraformSnippet(m.namespace, m.providerName, item.version.Version, m.snippetPaneWidth)
+}
+
 // versionListWithSnippet renders the version list with the terraform-block
 // snippet for the currently-selected version on the right. When the terminal
 // is too narrow to fit a useful snippet pane, only the list is rendered.
 func (m Model) versionListWithSnippet() string {
 	left := m.versionList.View()
-	if m.snippetPaneWidth <= 0 {
+	if m.snippetPaneWidth <= 0 || m.snippetRendered == "" {
 		return left
 	}
-	item, ok := m.versionList.SelectedItem().(versionItem)
-	if !ok {
-		return left
-	}
-	right := renderTerraformSnippet(m.namespace, m.providerName, item.version.Version, m.snippetPaneWidth)
-	right = lipgloss.NewStyle().
+	right := lipgloss.NewStyle().
 		Width(m.snippetPaneWidth).
 		Height(m.snippetPaneHeight).
-		Render(right)
+		Render(m.snippetRendered)
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 }
 
