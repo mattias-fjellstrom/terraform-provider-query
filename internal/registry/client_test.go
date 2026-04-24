@@ -57,45 +57,6 @@ func TestSemverGT(t *testing.T) {
 	}
 }
 
-func TestGetLatestVersion(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/hashicorp/aws":
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"version": "5.98.0"})
-		case "/hashicorp/missing":
-			http.NotFound(w, r)
-		default:
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-	}))
-	defer srv.Close()
-
-	origBase := baseURL
-	baseURL = srv.URL
-	defer func() { baseURL = origBase }()
-
-	t.Run("found", func(t *testing.T) {
-		ver, source, err := GetLatestVersion("hashicorp", "aws")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if ver != "5.98.0" {
-			t.Errorf("version: got %q, want %q", ver, "5.98.0")
-		}
-		if source != "hashicorp/aws" {
-			t.Errorf("source: got %q, want %q", source, "hashicorp/aws")
-		}
-	})
-
-	t.Run("not found", func(t *testing.T) {
-		_, _, err := GetLatestVersion("hashicorp", "missing")
-		if err == nil {
-			t.Fatal("expected an error for missing provider, got nil")
-		}
-	})
-}
-
 func TestGetVersions(t *testing.T) {
 	payload := ProviderResponse{
 		ID:     "hashicorp/aws",

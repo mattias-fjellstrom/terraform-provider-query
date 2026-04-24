@@ -61,39 +61,6 @@ type VersionDetail struct {
 	Body    string `json:"body"`
 }
 
-// GetLatestVersion returns the latest version string for the given provider
-// by querying the provider metadata endpoint which includes the current latest version.
-func GetLatestVersion(namespace, providerName string) (string, string, error) {
-	source := fmt.Sprintf("%s/%s", namespace, providerName)
-
-	url := fmt.Sprintf("%s/%s/%s", baseURL, namespace, providerName)
-	resp, err := http.Get(url)
-	if err != nil {
-		return "", source, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == 404 {
-		return "", source, fmt.Errorf("provider %q not found in the Terraform registry under %q namespace", providerName, namespace)
-	}
-	if resp.StatusCode != 200 {
-		return "", source, fmt.Errorf("registry returned status %d", resp.StatusCode)
-	}
-
-	var data struct {
-		Version string `json:"version"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return "", source, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if data.Version == "" {
-		return "", source, fmt.Errorf("no version found for provider %q", providerName)
-	}
-
-	return data.Version, source, nil
-}
-
 // GetVersions returns all available versions for the given provider under the given namespace.
 func GetVersions(namespace, providerName string) ([]VersionInfo, string, error) {
 	source := fmt.Sprintf("%s/%s", namespace, providerName)
