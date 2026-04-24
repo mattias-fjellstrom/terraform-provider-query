@@ -588,7 +588,42 @@ func renderTerraformSnippet(namespace, name, version string, width int) string {
 	if err != nil {
 		return body
 	}
-	return out
+	return trimCommonIndent(out)
+}
+
+// trimCommonIndent removes the minimum common leading whitespace from all
+// non-empty lines so that glamour's code-block margin does not produce
+// unwanted padding when the snippet is selected/copied.
+func trimCommonIndent(s string) string {
+	lines := strings.Split(s, "\n")
+
+	// Find the smallest indent across non-blank lines.
+	minIndent := -1
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		if minIndent < 0 || indent < minIndent {
+			minIndent = indent
+		}
+	}
+	if minIndent <= 0 {
+		return s
+	}
+
+	var b strings.Builder
+	for i, line := range lines {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		if len(line) >= minIndent {
+			b.WriteString(line[minIndent:])
+		} else {
+			b.WriteString(line)
+		}
+	}
+	return b.String()
 }
 
 // renderSnippet renders (and caches) the terraform-block snippet for the
