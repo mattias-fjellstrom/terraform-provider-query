@@ -142,6 +142,11 @@ type Model struct {
 	errorMsg      string
 	statusMsg     string
 	width, height int
+
+	// Sizing for the version-list / snippet split layout.
+	versionListWidth  int
+	snippetPaneWidth  int
+	snippetPaneHeight int
 }
 
 func New() Model {
@@ -212,7 +217,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.browseList.SetSize(msg.Width, listHeight)
 		// Other views also render the persistent header, so reserve the
 		// same vertical space on top of the per-state chrome.
-		m.versionList.SetSize(msg.Width, listHeight)
+		//
+		// The version list shares the row with a snippet panel showing the
+		// `terraform { required_providers { ... } }` block for the selected
+		// version. Give the snippet roughly half the width when there is
+		// enough room, otherwise let the list use the full width and skip
+		// the snippet pane.
+		listWidth := msg.Width
+		snippetWidth := 0
+		const minSnippetWidth = 40
+		if msg.Width >= 80 {
+			snippetWidth = msg.Width / 2
+			if snippetWidth < minSnippetWidth {
+				snippetWidth = minSnippetWidth
+			}
+			listWidth = msg.Width - snippetWidth
+		}
+		m.versionListWidth = listWidth
+		m.snippetPaneWidth = snippetWidth
+		m.snippetPaneHeight = listHeight
+		m.versionList.SetSize(listWidth, listHeight)
 		m.viewport.Width = msg.Width
 		m.viewport.Height = listHeight
 
@@ -509,8 +533,8 @@ func (m Model) View() string {
 		} else if m.statusMsg != "" {
 			b.WriteString(statusStyle.Render(m.statusMsg) + "\n")
 		}
-		b.WriteString(m.versionList.View())
-		b.WriteString("\n" + m.renderHelp("enter: release notes • d: open docs in browser • /: filter • esc: clear filter / back to providers • q: back to providers"))
+		b.WriteString(m.versionListWithSnippet())
+		b.WriteString("\n" + m.renderHelp("enter: release notes • d: open docs in browser • /: filter • esc: clear filter / back to providers • q: back to providers • required_providers snippet shown on the right"))
 
 	case stateReleaseNotes:
 		b.WriteString(subtitleStyle.Render(fmt.Sprintf("Release notes: %s v%s", m.source, m.selectedVer)) + "\n\n")
@@ -519,6 +543,65 @@ func (m Model) View() string {
 	}
 
 	return b.String()
+}
+
+// buildTerraformBlock returns the HCL `terraform { required_providers { ... } }`
+// snippet for the given provider and version. The local name in
+// `required_providers` uses the provider's short name (e.g. `aws` for
+// `hashicorp/aws`), matching the convention shown in the Terraform Registry.
+func buildTerraformBlock(namespace, name, version string) string {
+	return fmt.Sprintf(`terraform {
+  required_providers {
+    %s = {
+      source  = "%s/%s"
+      version = "%s"
+    }
+  }
+}
+`, name, namespace, name, version)
+}
+
+// renderTerraformSnippet wraps the HCL block in a Markdown ```hcl fence and
+// renders it through glamour so it gets syntax highlighting that matches the
+// release-notes view. Falls back to the plain HCL on any error.
+func renderTerraformSnippet(namespace, name, version string, width int) string {
+	body := buildTerraformBlock(namespace, name, version)
+	md := "```hcl\n" + body + "```\n"
+	if width <= 0 {
+		width = 80
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return body
+	}
+	out, err := r.Render(md)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// versionListWithSnippet renders the version list with the terraform-block
+// snippet for the currently-selected version on the right. When the terminal
+// is too narrow to fit a useful snippet pane, only the list is rendered.
+func (m Model) versionListWithSnippet() string {
+	left := m.versionList.View()
+	if m.snippetPaneWidth <= 0 {
+		return left
+	}
+	item, ok := m.versionList.SelectedItem().(versionItem)
+	if !ok {
+		return left
+	}
+	right := renderTerraformSnippet(m.namespace, m.providerName, item.version.Version, m.snippetPaneWidth)
+	right = lipgloss.NewStyle().
+		Width(m.snippetPaneWidth).
+		Height(m.snippetPaneHeight).
+		Render(right)
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 }
 
 func fetchVersions(namespace, providerName string) tea.Cmd {
