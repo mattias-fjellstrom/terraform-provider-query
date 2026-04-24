@@ -32,10 +32,13 @@ go mod download
 
 ## Running the Tool Locally
 
+`tpq` is a TUI-only application; running it always launches the interactive
+terminal UI.
+
 Build and run directly without installing:
 
 ```bash
-go run . [provider...]
+go run .
 ```
 
 Or build the binary:
@@ -72,7 +75,7 @@ go vet ./...
 2. Make your changes and add tests where applicable.
 3. Ensure `go vet ./...` and `go test ./...` both pass.
 4. Commit with a clear message using [Conventional Commits](https://www.conventionalcommits.org/) style,
-   e.g. `feat: add --json flag` or `fix: handle missing namespace`.
+   e.g. `feat: add docs viewport scrollbar` or `fix: handle missing namespace`.
 5. Push your branch and open a pull request against `main`.
 6. Fill in the pull request template and describe what problem your change solves.
 

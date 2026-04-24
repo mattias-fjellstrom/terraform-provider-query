@@ -30,8 +30,9 @@ body:
       label: Steps to Reproduce
       description: Provide the exact commands or actions that trigger the bug.
       placeholder: |
-        1. Run `tpq hashicorp/aws`
-        2. ...
+        1. Run `tpq` to open the TUI
+        2. Type `hashicorp/aws` to filter, press `enter`
+        3. ...
     validations:
       required: true
 
