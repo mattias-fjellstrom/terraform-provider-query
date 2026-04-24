@@ -450,6 +450,17 @@ func (m *Model) applyFilter() {
 	}
 }
 
+// renderHelp renders the given help text, word-wrapping it to the current
+// terminal width so long key-instruction lines do not spill past the right
+// edge of the window. Falls back to a plain render before the first
+// WindowSizeMsg has been received (m.width == 0).
+func (m Model) renderHelp(s string) string {
+	if m.width <= 0 {
+		return helpStyle.Render(s)
+	}
+	return helpStyle.Width(m.width).Render(s)
+}
+
 // browseListTitle returns the title for the providers list, including the
 // loaded count (and a spinner with pending tiers while still loading).
 func (m Model) browseListTitle() string {
@@ -486,11 +497,11 @@ func (m Model) View() string {
 		}
 		m.browseList.Title = m.browseListTitle()
 		b.WriteString(m.browseList.View())
-		b.WriteString("\n" + helpStyle.Render("type to filter • ↑/↓: select • enter: open • esc: clear filter • ctrl+c: quit"))
+		b.WriteString("\n" + m.renderHelp("type to filter • ↑/↓: select • enter: open • esc: clear filter • ctrl+c: quit"))
 
 	case stateLoading:
 		b.WriteString(m.spinner.View() + " Fetching data...\n\n")
-		b.WriteString(helpStyle.Render("ctrl+c: quit"))
+		b.WriteString(m.renderHelp("ctrl+c: quit"))
 
 	case stateVersionList:
 		if m.errorMsg != "" {
@@ -499,12 +510,12 @@ func (m Model) View() string {
 			b.WriteString(statusStyle.Render(m.statusMsg) + "\n")
 		}
 		b.WriteString(m.versionList.View())
-		b.WriteString("\n" + helpStyle.Render("enter: release notes • d: open docs in browser • /: filter • esc: clear filter / back to providers • q: back to providers"))
+		b.WriteString("\n" + m.renderHelp("enter: release notes • d: open docs in browser • /: filter • esc: clear filter / back to providers • q: back to providers"))
 
 	case stateReleaseNotes:
 		b.WriteString(subtitleStyle.Render(fmt.Sprintf("Release notes: %s v%s", m.source, m.selectedVer)) + "\n\n")
 		b.WriteString(m.viewport.View())
-		b.WriteString("\n" + helpStyle.Render("↑/↓: scroll • esc/q: back to versions"))
+		b.WriteString("\n" + m.renderHelp("↑/↓: scroll • esc/q: back to versions"))
 	}
 
 	return b.String()
