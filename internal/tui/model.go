@@ -208,9 +208,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			listHeight = 3
 		}
 		m.browseList.SetSize(msg.Width, listHeight)
-		m.versionList.SetSize(msg.Width, msg.Height-6)
+		// Other views also render the persistent header (title + blank line),
+		// so reserve space for it on top of the per-state chrome.
+		m.versionList.SetSize(msg.Width, msg.Height-8)
 		m.viewport.Width = msg.Width
-		m.viewport.Height = msg.Height - 6
+		m.viewport.Height = msg.Height - 8
 
 	case tea.KeyMsg:
 		// While the version list is in its built-in filter mode, let the
@@ -466,9 +468,12 @@ func (m Model) browseListTitle() string {
 func (m Model) View() string {
 	var b strings.Builder
 
+	// Persistent application header rendered for every state so the user
+	// always knows which app they are in.
+	b.WriteString(titleStyle.Render("Terraform Provider Query") + "\n\n")
+
 	switch m.state {
 	case stateBrowse:
-		b.WriteString(titleStyle.Render("Terraform Provider Query") + "\n\n")
 		b.WriteString(m.input.View() + "\n\n")
 		if m.browseErr != "" {
 			b.WriteString(errorStyle.Render(m.browseErr) + "\n")
@@ -481,7 +486,6 @@ func (m Model) View() string {
 		b.WriteString("\n" + helpStyle.Render("type to filter • ↑/↓: select • enter: open • esc: clear filter • ctrl+c: quit"))
 
 	case stateLoading:
-		b.WriteString(titleStyle.Render("Terraform Provider Query") + "\n\n")
 		b.WriteString(m.spinner.View() + " Fetching data...\n\n")
 		b.WriteString(helpStyle.Render("ctrl+c: quit"))
 
@@ -495,7 +499,7 @@ func (m Model) View() string {
 		b.WriteString("\n" + helpStyle.Render("enter: release notes • d: open docs in browser • /: filter • esc: clear filter / back to providers • q: back to providers"))
 
 	case stateReleaseNotes:
-		b.WriteString(titleStyle.Render(fmt.Sprintf("Release notes: %s v%s", m.source, m.selectedVer)) + "\n\n")
+		b.WriteString(subtitleStyle.Render(fmt.Sprintf("Release notes: %s v%s", m.source, m.selectedVer)) + "\n\n")
 		b.WriteString(m.viewport.View())
 		b.WriteString("\n" + helpStyle.Render("↑/↓: scroll • esc/q: back to versions"))
 	}
