@@ -102,3 +102,19 @@ the list focused and the load fast:
   (in your default browser).
 - `esc` clears the filter (or returns to the previous screen).
 - `ctrl+c` quits.
+
+### GitHub authentication (optional)
+
+Release notes and version publish dates are fetched from the GitHub API.
+Unauthenticated requests are limited to 60 per hour, which is easy to hit
+when browsing many providers. `tpq` will automatically use a GitHub token
+to raise the limit to 5,000 requests per hour, looking in this order:
+
+1. The `GITHUB_TOKEN` environment variable.
+2. The `GH_TOKEN` environment variable.
+3. The token from the [GitHub CLI](https://cli.github.com), if `gh` is
+   installed and you are signed in (`gh auth login`). `tpq` runs
+   `gh auth token` to retrieve it.
+
+No token is required — `tpq` will fall back to unauthenticated requests if
+none is found.
