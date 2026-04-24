@@ -68,11 +68,3 @@ the list focused and the load fast:
   (in your default browser).
 - `esc` clears the filter (or returns to the previous screen).
 - `ctrl+c` quits.
-
-### Look up a specific provider
-
-Print the latest version of a provider:
-
-```bash
-tpq hashicorp/aws
-```
