@@ -30,15 +30,18 @@ var (
 	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 	statusStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 
-	officialBadge  = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("official")
-	partnerBadge   = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Render("partner")
-	communityBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("community")
+	officialBadge       = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render("official")
+	partnerPremierBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Render("partner-premier")
+	partnerBadge        = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Render("partner")
+	communityBadge      = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("community")
 )
 
 func tierBadge(tier string) string {
 	switch tier {
 	case registry.TierOfficial:
 		return officialBadge
+	case registry.TierPartnerPremier:
+		return partnerPremierBadge
 	case registry.TierPartner:
 		return partnerBadge
 	default:
@@ -46,15 +49,18 @@ func tierBadge(tier string) string {
 	}
 }
 
-// tierRank orders official < partner < community for stable secondary sorting.
+// tierRank orders official < partner-premier < partner < community for stable
+// secondary sorting.
 func tierRank(tier string) int {
 	switch tier {
 	case registry.TierOfficial:
 		return 0
-	case registry.TierPartner:
+	case registry.TierPartnerPremier:
 		return 1
-	default:
+	case registry.TierPartner:
 		return 2
+	default:
+		return 3
 	}
 }
 
@@ -178,7 +184,11 @@ func New() Model {
 		versionList:  versions,
 		viewport:     vp,
 		tiersLoaded:  map[string]bool{},
-		tiersLoading: map[string]bool{registry.TierOfficial: true, registry.TierPartner: true},
+		tiersLoading: map[string]bool{
+			registry.TierOfficial:       true,
+			registry.TierPartnerPremier: true,
+			registry.TierPartner:        true,
+		},
 	}
 }
 
@@ -187,6 +197,7 @@ func (m Model) Init() tea.Cmd {
 		textinput.Blink,
 		m.spinner.Tick,
 		fetchProviders(registry.TierOfficial),
+		fetchProviders(registry.TierPartnerPremier),
 		fetchProviders(registry.TierPartner),
 	)
 }
@@ -391,7 +402,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		// Also tick while we're still loading provider tiers in the background.
-		if m.state == stateBrowse && (m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartner]) {
+		if m.state == stateBrowse && (m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartnerPremier] || m.tiersLoading[registry.TierPartner]) {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
@@ -421,7 +432,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// sortProviders orders by tier (official, partner) then downloads desc.
+// sortProviders orders by tier (official, partner-premier, partner) then downloads desc.
 func (m *Model) sortProviders() {
 	sort.SliceStable(m.allProviders, func(i, j int) bool {
 		ri, rj := tierRank(m.allProviders[i].Tier), tierRank(m.allProviders[j].Tier)
@@ -465,9 +476,9 @@ func (m Model) renderHelp(s string) string {
 // loaded count (and a spinner with pending tiers while still loading).
 func (m Model) browseListTitle() string {
 	switch {
-	case m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartner]:
+	case m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartnerPremier] || m.tiersLoading[registry.TierPartner]:
 		var pending []string
-		for _, t := range []string{registry.TierOfficial, registry.TierPartner} {
+		for _, t := range []string{registry.TierOfficial, registry.TierPartnerPremier, registry.TierPartner} {
 			if m.tiersLoading[t] {
 				pending = append(pending, t)
 			}
