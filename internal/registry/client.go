@@ -19,9 +19,10 @@ var (
 
 // Tier values returned by the Terraform Registry v2 API.
 const (
-	TierOfficial  = "official"
-	TierPartner   = "partner"
-	TierCommunity = "community"
+	TierOfficial       = "official"
+	TierPartnerPremier = "partner-premier"
+	TierPartner        = "partner"
+	TierCommunity      = "community"
 )
 
 // Provider is a lightweight representation of a provider listed in the
@@ -180,7 +181,7 @@ type providersV2Page struct {
 }
 
 // GetProvidersByTier returns all providers in the given tier (official,
-// partner, or community) sorted by download count descending.
+// partner-premier, partner, or community) sorted by download count descending.
 func GetProvidersByTier(tier string) ([]Provider, error) {
 	const pageSize = 100
 	var providers []Provider

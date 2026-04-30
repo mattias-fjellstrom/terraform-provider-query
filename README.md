@@ -91,7 +91,7 @@ flags for one-shot queries. The only flags are `--version` (print the version
 and exit) and `--help`.
 
 The TUI opens to a **browse** screen with a search input and a list of
-official and partner providers from the Terraform Registry, grouped by tier
+official, partner-premier, and partner providers from the Terraform Registry, grouped by tier
 and sorted by downloads. Community providers are intentionally skipped to keep
 the list focused and the load fast:
 
