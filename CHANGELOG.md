@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-30
+
 ### Added
 - MIT license
 - `CONTRIBUTING.md` contributor guide
@@ -21,9 +23,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (resources, data sources, ephemeral resources, actions, functions,
   guides, overview), fuzzy-filter with `/`, and render any page in a
   scrollable Markdown viewport
+- TUI browse view now also lists providers from HashiCorp's new
+  `partner-premier` tier, ranked between official and partner with a
+  distinct badge
 
 ### Changed
-- TUI browse view no longer fetches community-tier providers; only official and partner providers are listed
+- TUI browse view no longer fetches community-tier providers; only
+  official, partner-premier, and partner providers are listed
 
 ### Removed
 - TUI usage snippet view (`u` shortcut from the version list)
