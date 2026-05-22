@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	neturl "net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -41,8 +42,8 @@ func (p Provider) FullName() string { return p.Namespace + "/" + p.Name }
 // ParseProvider splits an input string of the form "namespace/name" into its parts.
 // If no namespace is provided, it defaults to "hashicorp".
 func ParseProvider(input string) (namespace, name string) {
-	if idx := strings.Index(input, "/"); idx != -1 {
-		return input[:idx], input[idx+1:]
+	if before, after, ok := strings.Cut(input, "/"); ok {
+		return before, after
 	}
 	return "hashicorp", input
 }
@@ -183,12 +184,35 @@ type providersV2Page struct {
 // GetProvidersByTier returns all providers in the given tier (official,
 // partner-premier, partner, or community) sorted by download count descending.
 func GetProvidersByTier(tier string) ([]Provider, error) {
+	return fetchProvidersV2("filter[tier]", tier)
+}
+
+// GetProvidersByNamespace returns all providers published under the given
+// namespace, sorted by download count descending. Returns an error if the
+// namespace is empty (the registry would otherwise treat it as an unfiltered
+// query and return every provider).
+func GetProvidersByNamespace(namespace string) ([]Provider, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return nil, fmt.Errorf("namespace must not be empty")
+	}
+	return fetchProvidersV2("filter[namespace]", namespace)
+}
+
+// fetchProvidersV2 paginates through the v2 providers endpoint using a single
+// filter parameter (e.g. filter[tier] or filter[namespace]) and returns all
+// matching providers sorted by download count descending.
+func fetchProvidersV2(filterKey, filterValue string) ([]Provider, error) {
 	const pageSize = 100
 	var providers []Provider
 
 	page := 1
 	for {
-		url := fmt.Sprintf("%s?filter%%5Btier%%5D=%s&page%%5Bsize%%5D=%d&page%%5Bnumber%%5D=%d", v2BaseURL, tier, pageSize, page)
+		params := neturl.Values{}
+		params.Set(filterKey, filterValue)
+		params.Set("page[size]", strconv.Itoa(pageSize))
+		params.Set("page[number]", strconv.Itoa(page))
+		url := fmt.Sprintf("%s?%s", v2BaseURL, params.Encode())
+
 		resp, err := http.Get(url)
 		if err != nil {
 			return nil, fmt.Errorf("request failed: %w", err)

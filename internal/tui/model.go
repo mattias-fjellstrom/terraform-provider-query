@@ -84,6 +84,14 @@ type providersLoadedMsg struct {
 	err       error
 }
 
+// namespaceProvidersLoadedMsg carries providers fetched for a single namespace
+// via the namespace-only search path.
+type namespaceProvidersLoadedMsg struct {
+	namespace string
+	providers []registry.Provider
+	err       error
+}
+
 // versionItem implements list.Item for displaying a version in the list.
 type versionItem struct {
 	version   registry.VersionInfo
@@ -137,6 +145,13 @@ type Model struct {
 	browseErr      string
 	lastFilterText string
 
+	// Namespace-only search state. Tracks namespaces the user has fetched
+	// via the "ns/" enter shortcut so we don't refetch and so we know what
+	// to show as loading in the title.
+	namespacesLoaded  map[string]bool
+	namespacesLoading map[string]bool
+	seenProviders     map[string]bool
+
 	// Versions / release notes
 	spinner       spinner.Model
 	versionList   list.Model
@@ -148,7 +163,6 @@ type Model struct {
 	errorMsg      string
 	statusMsg     string
 	width, height int
-
 }
 
 func New() Model {
@@ -177,18 +191,21 @@ func New() Model {
 	vp := viewport.New(0, 0)
 
 	return Model{
-		state:        stateBrowse,
-		input:        ti,
-		spinner:      sp,
-		browseList:   browse,
-		versionList:  versions,
-		viewport:     vp,
-		tiersLoaded:  map[string]bool{},
+		state:       stateBrowse,
+		input:       ti,
+		spinner:     sp,
+		browseList:  browse,
+		versionList: versions,
+		viewport:    vp,
+		tiersLoaded: map[string]bool{},
 		tiersLoading: map[string]bool{
 			registry.TierOfficial:       true,
 			registry.TierPartnerPremier: true,
 			registry.TierPartner:        true,
 		},
+		namespacesLoaded:  map[string]bool{},
+		namespacesLoading: map[string]bool{},
+		seenProviders:     map[string]bool{},
 	}
 }
 
@@ -217,10 +234,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// + status (1) + help (2). The header is now a single emoji row
 		// instead of multi-line ASCII art.
 		const headerReserve = 8
-		listHeight := msg.Height - headerReserve
-		if listHeight < 3 {
-			listHeight = 3
-		}
+		listHeight := max(msg.Height-headerReserve, 3)
 		m.browseList.SetSize(msg.Width, listHeight)
 		// Other views also render the persistent header, so reserve the
 		// same vertical space on top of the per-state chrome.
@@ -317,6 +331,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				namespace, name := registry.ParseProvider(input)
+				// Namespace-only input (e.g. "SAP/") — fetch the providers in
+				// that namespace and merge them into the browse list rather
+				// than attempting a versions lookup with an empty name.
+				if name == "" {
+					if m.namespacesLoaded[namespace] || m.namespacesLoading[namespace] {
+						return m, nil
+					}
+					m.namespacesLoading[namespace] = true
+					m.errorMsg = ""
+					m.statusMsg = fmt.Sprintf("loading providers in namespace %q…", namespace)
+					return m, tea.Batch(m.spinner.Tick, fetchProvidersByNamespace(namespace))
+				}
 				m.namespace = namespace
 				m.providerName = name
 				m.state = stateLoading
@@ -349,10 +375,50 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.browseErr = fmt.Sprintf("failed to load %s providers: %v", msg.tier, msg.err)
 			}
 		} else {
-			m.allProviders = append(m.allProviders, msg.providers...)
+			for _, p := range msg.providers {
+				key := p.FullName()
+				if m.seenProviders[key] {
+					continue
+				}
+				m.seenProviders[key] = true
+				m.allProviders = append(m.allProviders, p)
+			}
 			m.loadedCount = len(m.allProviders)
 			m.sortProviders()
 			m.applyFilter()
+		}
+		return m, nil
+
+	case namespaceProvidersLoadedMsg:
+		m.namespacesLoading[msg.namespace] = false
+		m.namespacesLoaded[msg.namespace] = true
+		if msg.err != nil {
+			m.statusMsg = ""
+			m.errorMsg = fmt.Sprintf("failed to load namespace %q: %v", msg.namespace, msg.err)
+			return m, nil
+		}
+		added := 0
+		for _, p := range msg.providers {
+			key := p.FullName()
+			if m.seenProviders[key] {
+				continue
+			}
+			m.seenProviders[key] = true
+			m.allProviders = append(m.allProviders, p)
+			added++
+		}
+		m.loadedCount = len(m.allProviders)
+		m.sortProviders()
+		m.applyFilter()
+		switch {
+		case len(msg.providers) == 0:
+			m.statusMsg = fmt.Sprintf("no providers found for namespace %q", msg.namespace)
+		case added == 0:
+			m.statusMsg = fmt.Sprintf("namespace %q: all %d providers were already loaded", msg.namespace, len(msg.providers))
+		case added < len(msg.providers):
+			m.statusMsg = fmt.Sprintf("namespace %q: loaded %d new providers (%d already known)", msg.namespace, added, len(msg.providers)-added)
+		default:
+			m.statusMsg = fmt.Sprintf("namespace %q: loaded %d providers", msg.namespace, added)
 		}
 		return m, nil
 
@@ -402,7 +468,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		// Also tick while we're still loading provider tiers in the background.
-		if m.state == stateBrowse && (m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartnerPremier] || m.tiersLoading[registry.TierPartner]) {
+		if m.state == stateBrowse && (m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartnerPremier] || m.tiersLoading[registry.TierPartner] || m.anyNamespaceLoading()) {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
@@ -414,8 +480,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateBrowse:
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
-		// Re-filter when the input value changed.
+		// Re-filter when the input value changed. Also clear any lingering
+		// status message (e.g. from a namespace fetch) so it doesn't follow
+		// the user into an unrelated filter.
 		if m.input.Value() != m.lastFilterText {
+			m.statusMsg = ""
 			m.applyFilter()
 		}
 		return m, cmd
@@ -475,18 +544,33 @@ func (m Model) renderHelp(s string) string {
 // browseListTitle returns the title for the providers list, including the
 // loaded count (and a spinner with pending tiers while still loading).
 func (m Model) browseListTitle() string {
-	switch {
-	case m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartnerPremier] || m.tiersLoading[registry.TierPartner]:
-		var pending []string
-		for _, t := range []string{registry.TierOfficial, registry.TierPartnerPremier, registry.TierPartner} {
-			if m.tiersLoading[t] {
-				pending = append(pending, t)
-			}
-		}
-		return fmt.Sprintf("Providers (%d loaded — %s loading %s…)", m.loadedCount, m.spinner.View(), strings.Join(pending, ", "))
-	default:
+	tiersPending := m.tiersLoading[registry.TierOfficial] || m.tiersLoading[registry.TierPartnerPremier] || m.tiersLoading[registry.TierPartner]
+	nsPending := m.anyNamespaceLoading()
+	if !tiersPending && !nsPending {
 		return fmt.Sprintf("Providers (%d loaded)", m.loadedCount)
 	}
+	var pending []string
+	for _, t := range []string{registry.TierOfficial, registry.TierPartnerPremier, registry.TierPartner} {
+		if m.tiersLoading[t] {
+			pending = append(pending, t)
+		}
+	}
+	for ns, loading := range m.namespacesLoading {
+		if loading {
+			pending = append(pending, "ns:"+ns)
+		}
+	}
+	return fmt.Sprintf("Providers (%d loaded — %s loading %s…)", m.loadedCount, m.spinner.View(), strings.Join(pending, ", "))
+}
+
+// anyNamespaceLoading reports whether at least one namespace fetch is in flight.
+func (m Model) anyNamespaceLoading() bool {
+	for _, loading := range m.namespacesLoading {
+		if loading {
+			return true
+		}
+	}
+	return false
 }
 
 func (m Model) View() string {
@@ -506,9 +590,12 @@ func (m Model) View() string {
 		if m.errorMsg != "" {
 			b.WriteString(errorStyle.Render("Error: "+m.errorMsg) + "\n")
 		}
+		if m.statusMsg != "" {
+			b.WriteString(statusStyle.Render(m.statusMsg) + "\n")
+		}
 		m.browseList.Title = m.browseListTitle()
 		b.WriteString(m.browseList.View())
-		b.WriteString("\n" + m.renderHelp("type to filter • ↑/↓: select • enter: open • esc: clear filter • ctrl+c: quit"))
+		b.WriteString("\n" + m.renderHelp("type to filter • ↑/↓: select • enter: open selection (or, with empty list, fetch namespace from \"ns/\") • esc: clear filter • ctrl+c: quit"))
 
 	case stateLoading:
 		b.WriteString(m.spinner.View() + " Fetching data...\n\n")
@@ -550,5 +637,12 @@ func fetchProviders(tier string) tea.Cmd {
 	return func() tea.Msg {
 		providers, err := registry.GetProvidersByTier(tier)
 		return providersLoadedMsg{tier: tier, providers: providers, err: err}
+	}
+}
+
+func fetchProvidersByNamespace(namespace string) tea.Cmd {
+	return func() tea.Msg {
+		providers, err := registry.GetProvidersByNamespace(namespace)
+		return namespaceProvidersLoadedMsg{namespace: namespace, providers: providers, err: err}
 	}
 }

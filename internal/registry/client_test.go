@@ -10,14 +10,16 @@ import (
 
 func TestParseProvider(t *testing.T) {
 	tests := []struct {
-		input             string
-		wantNamespace     string
-		wantProviderName  string
+		input            string
+		wantNamespace    string
+		wantProviderName string
 	}{
 		{"aws", "hashicorp", "aws"},
 		{"hashicorp/aws", "hashicorp", "aws"},
 		{"integrations/github", "integrations", "github"},
 		{"myorg/myprovider", "myorg", "myprovider"},
+		{"SAP/", "SAP", ""},
+		{"SAP/btp", "SAP", "btp"},
 	}
 
 	for _, tt := range tests {
@@ -102,7 +104,6 @@ func TestGetVersions(t *testing.T) {
 	}
 }
 
-
 func TestGetProvidersByTier(t *testing.T) {
 	type attr struct {
 		Namespace string `json:"namespace"`
@@ -173,5 +174,103 @@ func TestGetProvidersByTier(t *testing.T) {
 	}
 	if got[0].FullName() != "hashicorp/azurerm" {
 		t.Errorf("FullName: got %q, want %q", got[0].FullName(), "hashicorp/azurerm")
+	}
+}
+
+func TestGetProvidersByNamespace(t *testing.T) {
+	type attr struct {
+		Namespace string `json:"namespace"`
+		Name      string `json:"name"`
+		Tier      string `json:"tier"`
+		Downloads int    `json:"downloads"`
+	}
+	type item struct {
+		Attributes attr `json:"attributes"`
+	}
+	pages := [][]item{
+		{
+			{Attributes: attr{Namespace: "SAP", Name: "btp", Tier: "community", Downloads: 50}},
+			{Attributes: attr{Namespace: "SAP", Name: "cloudfoundry", Tier: "partner", Downloads: 30}},
+		},
+		{
+			{Attributes: attr{Namespace: "SAP", Name: "abap", Tier: "partner", Downloads: 80}},
+		},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.URL.Query().Get("filter[namespace]"), "SAP"; got != want {
+			t.Errorf("namespace filter: got %q, want %q", got, want)
+		}
+		if got := r.URL.Query().Get("filter[tier]"); got != "" {
+			t.Errorf("tier filter should not be set, got %q", got)
+		}
+		page := r.URL.Query().Get("page[number]")
+		if page == "" {
+			page = "1"
+		}
+		var idx int
+		fmt.Sscanf(page, "%d", &idx)
+		if idx < 1 || idx > len(pages) {
+			http.NotFound(w, r)
+			return
+		}
+		var next *int
+		if idx < len(pages) {
+			n := idx + 1
+			next = &n
+		}
+		resp := map[string]any{
+			"data": pages[idx-1],
+			"meta": map[string]any{
+				"pagination": map[string]any{"next-page": next},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	orig := v2BaseURL
+	v2BaseURL = srv.URL
+	defer func() { v2BaseURL = orig }()
+
+	got, err := GetProvidersByNamespace("SAP")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 providers (pagination followed), got %d", len(got))
+	}
+	// Sorted by downloads desc: abap(80), btp(50), cloudfoundry(30).
+	wantOrder := []string{"abap", "btp", "cloudfoundry"}
+	for i, w := range wantOrder {
+		if got[i].Name != w {
+			t.Errorf("idx %d: got %q, want %q", i, got[i].Name, w)
+		}
+	}
+	if got[0].Namespace != "SAP" {
+		t.Errorf("namespace: got %q, want %q", got[0].Namespace, "SAP")
+	}
+	// btp is the community-tier entry; verify the tier is preserved through
+	// the pagination + sort path.
+	for _, p := range got {
+		if p.Name == "btp" && p.Tier != "community" {
+			t.Errorf("btp tier: got %q, want %q", p.Tier, "community")
+		}
+	}
+}
+
+// TestGetProvidersByNamespaceRejectsEmpty verifies that an empty namespace is
+// rejected at the boundary, since the registry would otherwise treat an empty
+// filter[namespace] as no filter at all and return every provider.
+func TestGetProvidersByNamespaceRejectsEmpty(t *testing.T) {
+	for _, in := range []string{"", "   ", "\t"} {
+		got, err := GetProvidersByNamespace(in)
+		if err == nil {
+			t.Errorf("GetProvidersByNamespace(%q): got nil error, want one", in)
+		}
+		if got != nil {
+			t.Errorf("GetProvidersByNamespace(%q): got %d providers, want nil slice", in, len(got))
+		}
 	}
 }
