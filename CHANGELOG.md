@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (resources, data sources, ephemeral resources, actions, functions,
   guides, overview), fuzzy-filter with `/`, and render any page in a
   scrollable Markdown viewport
+- Support search for providers by namespace including caching and de-duplicating results if already loaded in the TUI
 
 ### Changed
 - TUI browse view no longer fetches community-tier providers; only official and partner providers are listed
