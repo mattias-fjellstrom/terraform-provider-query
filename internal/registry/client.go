@@ -313,3 +313,22 @@ func GetReleaseNotes(namespace, providerName, version string) (string, error) {
 	releaseNotesCache.set(key, notes)
 	return notes, nil
 }
+
+// GetLatestVersion returns the newest stable (non-pre-release) version of the
+// given provider. If the provider only has pre-release versions, the newest
+// of those is returned instead.
+func GetLatestVersion(namespace, providerName string) (string, error) {
+	versions, err := getRegistryVersions(namespace, providerName)
+	if err != nil {
+		return "", err
+	}
+	if len(versions) == 0 {
+		return "", fmt.Errorf("provider %q has no published versions", namespace+"/"+providerName)
+	}
+	for _, v := range versions {
+		if !strings.Contains(v.Version, "-") {
+			return v.Version, nil
+		}
+	}
+	return versions[0].Version, nil
+}

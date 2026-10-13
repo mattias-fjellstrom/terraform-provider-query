@@ -181,3 +181,46 @@ func TestGetProvidersByTier(t *testing.T) {
 		t.Errorf("FullName: got %q, want %q", got[0].FullName(), "hashicorp/azurerm")
 	}
 }
+
+func TestGetLatestVersion(t *testing.T) {
+	tests := []struct {
+		name     string
+		versions []VersionInfo
+		want     string
+		wantErr  bool
+	}{
+		{"stable", []VersionInfo{{Version: "5.97.0"}, {Version: "5.98.0"}}, "5.98.0", false},
+		{"skips pre-release", []VersionInfo{{Version: "5.98.0"}, {Version: "6.0.0-beta1"}}, "5.98.0", false},
+		{"only pre-release", []VersionInfo{{Version: "0.1.0-alpha"}}, "0.1.0-alpha", false},
+		{"no versions", nil, "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ResetCache()
+			t.Cleanup(ResetCache)
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/hashicorp/aws/versions" {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(ProviderResponse{Versions: tt.versions})
+			}))
+			defer srv.Close()
+
+			origBase := baseURL
+			baseURL = srv.URL
+			defer func() { baseURL = origBase }()
+
+			got, err := GetLatestVersion("hashicorp", "aws")
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error: got %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
