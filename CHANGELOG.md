@@ -25,6 +25,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   release notes so data is only fetched once per session (failed requests
   are not cached)
 
+### Fixed
+- Opening release notes could hang on the loading screen for several
+  seconds, even for cached notes: Markdown rendering re-detected the
+  terminal background on every render, racing Bubble Tea for stdin. The
+  style is now detected once at startup and rendering happens off the UI
+  thread
+
 ### Changed
 - TUI browse view no longer fetches community-tier providers; only official and partner providers are listed
 
