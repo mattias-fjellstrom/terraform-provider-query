@@ -1,6 +1,7 @@
 package hcl
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -93,5 +94,41 @@ provider "tfe" {
 `
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestGenerateJSON(t *testing.T) {
+	got := GenerateJSON([]Provider{
+		{"hashicorp", "tfe", "0.70.0"},
+		{"hashicorp", "aws", "6.15.0"},
+	})
+	want := `{
+  "terraform": {
+    "required_providers": {
+      "tfe": {
+        "source": "hashicorp/tfe",
+        "version": "0.70.0"
+      },
+      "aws": {
+        "source": "hashicorp/aws",
+        "version": "6.15.0"
+      }
+    }
+  },
+  "provider": {
+    "tfe": {
+      "//": "add configuration here"
+    },
+    "aws": {
+      "//": "add configuration here"
+    }
+  }
+}
+`
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+	if !json.Valid([]byte(got)) {
+		t.Errorf("output is not valid JSON")
 	}
 }

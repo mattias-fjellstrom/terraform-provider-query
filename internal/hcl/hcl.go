@@ -2,6 +2,7 @@
 package hcl
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -89,4 +90,44 @@ func Generate(providers []Provider) string {
 		b.WriteString("}\n")
 	}
 	return b.String()
+}
+
+// GenerateJSON renders the same configuration as Generate using Terraform's
+// JSON configuration syntax (suitable for a .tf.json file). Provider order is
+// preserved.
+func GenerateJSON(providers []Provider) string {
+	q := func(s string) string {
+		out, _ := json.Marshal(s)
+		return string(out)
+	}
+	var b strings.Builder
+	b.WriteString("{\n")
+	b.WriteString("  \"terraform\": {\n")
+	b.WriteString("    \"required_providers\": {\n")
+	for i, p := range providers {
+		fmt.Fprintf(&b, "      %s: {\n", q(p.Name))
+		fmt.Fprintf(&b, "        \"source\": %s,\n", q(p.Namespace+"/"+p.Name))
+		fmt.Fprintf(&b, "        \"version\": %s\n", q(p.Version))
+		b.WriteString("      }")
+		b.WriteString(sep(i, len(providers)))
+	}
+	b.WriteString("    }\n")
+	b.WriteString("  },\n")
+	b.WriteString("  \"provider\": {\n")
+	for i, p := range providers {
+		fmt.Fprintf(&b, "    %s: {\n", q(p.Name))
+		b.WriteString("      \"//\": \"add configuration here\"\n")
+		b.WriteString("    }")
+		b.WriteString(sep(i, len(providers)))
+	}
+	b.WriteString("  }\n")
+	b.WriteString("}\n")
+	return b.String()
+}
+
+func sep(i, n int) string {
+	if i < n-1 {
+		return ",\n"
+	}
+	return "\n"
 }

@@ -86,10 +86,17 @@ Launch `tpq` to open the terminal UI:
 tpq
 ```
 
-Besides the TUI, `tpq` supports a few flags:
+Pass one or more providers to print Terraform configuration for them instead
+of opening the TUI (see [Generate provider configuration](#generate-provider-configuration)):
 
-- `--hcl PROVIDER...` — print Terraform configuration for the given providers
-  and exit (see [Generate provider configuration](#generate-provider-configuration)).
+```bash
+tpq aws azurerm tfe
+```
+
+`tpq` supports a few flags, which may appear before or after the providers:
+
+- `--hcl` — print the configuration in HCL syntax (the default).
+- `--json` — print the configuration in Terraform JSON syntax.
 - `--version` — print the version and exit.
 - `--help` — show usage.
 
@@ -115,13 +122,13 @@ cached and will be retried the next time. Restart `tpq` to fetch fresh data.
 
 ### Generate provider configuration
 
-Run `tpq --hcl` followed by one or more providers to print a `terraform`
-block that pins each provider to its latest stable version, plus an empty
-`provider` block for each one. Providers without a namespace default to
-`hashicorp`; use `namespace/name` for others (e.g. `integrations/github`).
+Run `tpq` followed by one or more providers to print a `terraform` block that
+pins each provider to its latest stable version, plus an empty `provider`
+block for each one. Providers without a namespace default to `hashicorp`; use
+`namespace/name` for others (e.g. `integrations/github`).
 
 ```bash
-tpq --hcl aws azurerm tfe
+tpq aws azurerm tfe
 ```
 
 ```hcl
@@ -159,7 +166,48 @@ The configuration is written to standard output (errors go to standard
 error), so you can redirect it straight into a file:
 
 ```bash
-tpq --hcl aws azurerm tfe > providers.tf
+tpq aws azurerm tfe > providers.tf
+```
+
+HCL is the default output format (`--hcl` selects it explicitly). Use
+`--json` to get the same configuration in
+[Terraform JSON syntax](https://developer.hashicorp.com/terraform/language/syntax/json)
+instead:
+
+```bash
+tpq --json aws azurerm tfe > providers.tf.json
+```
+
+```json
+{
+  "terraform": {
+    "required_providers": {
+      "aws": {
+        "source": "hashicorp/aws",
+        "version": "6.68.0"
+      },
+      "azurerm": {
+        "source": "hashicorp/azurerm",
+        "version": "5.9.0"
+      },
+      "tfe": {
+        "source": "hashicorp/tfe",
+        "version": "0.82.0"
+      }
+    }
+  },
+  "provider": {
+    "aws": {
+      "//": "add configuration here"
+    },
+    "azurerm": {
+      "//": "add configuration here"
+    },
+    "tfe": {
+      "//": "add configuration here"
+    }
+  }
+}
 ```
 
 ### GitHub authentication (optional)
