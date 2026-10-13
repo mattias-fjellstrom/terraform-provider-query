@@ -3,8 +3,10 @@ package registry
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -64,45 +66,74 @@ type VersionDetail struct {
 }
 
 // GetVersions returns all available versions for the given provider under the given namespace.
+// Successful results are cached for the lifetime of the process.
 func GetVersions(namespace, providerName string) ([]VersionInfo, string, error) {
 	source := fmt.Sprintf("%s/%s", namespace, providerName)
+
+	cached, err := getRegistryVersions(namespace, providerName)
+	if err != nil {
+		return nil, source, err
+	}
+
+	// Copy so callers can't mutate the cached slice.
+	versions := slices.Clone(cached)
+
+	// Published dates are fetched (and cached) separately so a transient
+	// GitHub failure doesn't prevent dates from being filled in later.
+	dates, _ := GetVersionPublishedDates(namespace, providerName)
+	for i := range versions {
+		if d, ok := dates[versions[i].Version]; ok {
+			versions[i].Published = d
+		}
+	}
+
+	return versions, source, nil
+}
+
+// getRegistryVersions fetches the provider's versions from the Terraform
+// Registry, sorted newest first, using the session cache when possible.
+func getRegistryVersions(namespace, providerName string) ([]VersionInfo, error) {
+	key := cacheKey(namespace, providerName)
+	if v, ok := versionsCache.get(key); ok {
+		return v, nil
+	}
 
 	url := fmt.Sprintf("%s/%s/%s/versions", baseURL, namespace, providerName)
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, source, fmt.Errorf("request failed: %w", err)
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 404 {
-		return nil, source, fmt.Errorf("provider %q not found", providerName)
+		return nil, fmt.Errorf("provider %q not found", providerName)
 	}
 	if resp.StatusCode != 200 {
-		return nil, source, fmt.Errorf("registry returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("registry returned status %d", resp.StatusCode)
 	}
 
 	var data ProviderResponse
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, source, fmt.Errorf("failed to decode response: %w", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	sort.Slice(data.Versions, func(i, j int) bool {
 		return semverGT(data.Versions[i].Version, data.Versions[j].Version)
 	})
 
-	dates, _ := GetVersionPublishedDates(namespace, providerName)
-	for i := range data.Versions {
-		if d, ok := dates[data.Versions[i].Version]; ok {
-			data.Versions[i].Published = d
-		}
-	}
-
-	return data.Versions, source, nil
+	versionsCache.set(key, data.Versions)
+	return data.Versions, nil
 }
 
 // GetVersionPublishedDates fetches published dates for provider versions from the
 // GitHub releases API and returns a map of version string to formatted date.
+// Successful results are cached for the lifetime of the process.
 func GetVersionPublishedDates(namespace, providerName string) (map[string]string, error) {
+	key := cacheKey(namespace, providerName)
+	if d, ok := publishedDatesCache.get(key); ok {
+		return maps.Clone(d), nil
+	}
+
 	url := fmt.Sprintf(
 		"%s/repos/%s/terraform-provider-%s/releases?per_page=100",
 		githubAPIBaseURL,
@@ -143,7 +174,8 @@ func GetVersionPublishedDates(namespace, providerName string) (map[string]string
 			dates[version] = t.Format("Jan 2, 2006")
 		}
 	}
-	return dates, nil
+	publishedDatesCache.set(key, dates)
+	return maps.Clone(dates), nil
 }
 
 var semverDigits = regexp.MustCompile(`\d+`)
@@ -182,7 +214,13 @@ type providersV2Page struct {
 
 // GetProvidersByTier returns all providers in the given tier (official,
 // partner-premier, partner, or community) sorted by download count descending.
+// Successful results are cached for the lifetime of the process.
 func GetProvidersByTier(tier string) ([]Provider, error) {
+	key := cacheKey(tier)
+	if p, ok := providersCache.get(key); ok {
+		return slices.Clone(p), nil
+	}
+
 	const pageSize = 100
 	var providers []Provider
 
@@ -223,11 +261,21 @@ func GetProvidersByTier(tier string) ([]Provider, error) {
 	sort.Slice(providers, func(i, j int) bool {
 		return providers[i].Downloads > providers[j].Downloads
 	})
-	return providers, nil
+	providersCache.set(key, providers)
+	return slices.Clone(providers), nil
 }
 
+const noReleaseNotes = "(no release notes available)"
+
 // GetReleaseNotes fetches the changelog/release notes for a provider version from GitHub.
+// Found (and definitively missing) release notes are cached for the lifetime
+// of the process; transient failures such as rate limiting are not.
 func GetReleaseNotes(namespace, providerName, version string) (string, error) {
+	key := cacheKey(namespace, providerName, version)
+	if n, ok := releaseNotesCache.get(key); ok {
+		return n, nil
+	}
+
 	url := fmt.Sprintf("%s/repos/%s/terraform-provider-%s/releases/tags/v%s", githubAPIBaseURL, namespace, providerName, version)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -244,8 +292,12 @@ func GetReleaseNotes(namespace, providerName, version string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == 404 {
+		releaseNotesCache.set(key, noReleaseNotes)
+		return noReleaseNotes, nil
+	}
 	if resp.StatusCode != 200 {
-		return "(no release notes available)", nil
+		return noReleaseNotes, nil
 	}
 
 	var release struct {
@@ -254,8 +306,10 @@ func GetReleaseNotes(namespace, providerName, version string) (string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return "", err
 	}
-	if release.Body == "" {
-		return "(no release notes available)", nil
+	notes := release.Body
+	if notes == "" {
+		notes = noReleaseNotes
 	}
-	return release.Body, nil
+	releaseNotesCache.set(key, notes)
+	return notes, nil
 }

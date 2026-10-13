@@ -105,6 +105,11 @@ the list focused and the load fast:
 - `esc` clears the filter (or returns to the previous screen).
 - `ctrl+c` quits.
 
+Provider lists, versions, publish dates, and release notes are cached in
+memory for the rest of the session, so revisiting a provider or version is
+instant and doesn't make additional API requests. Failed requests are not
+cached and will be retried the next time. Restart `tpq` to fetch fresh data.
+
 ### GitHub authentication (optional)
 
 Release notes and version publish dates are fetched from the GitHub API.

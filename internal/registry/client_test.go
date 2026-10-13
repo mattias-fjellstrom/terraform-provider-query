@@ -58,6 +58,9 @@ func TestSemverGT(t *testing.T) {
 }
 
 func TestGetVersions(t *testing.T) {
+	ResetCache()
+	t.Cleanup(ResetCache)
+
 	payload := ProviderResponse{
 		ID:     "hashicorp/aws",
 		Source: "hashicorp/aws",
@@ -104,6 +107,9 @@ func TestGetVersions(t *testing.T) {
 
 
 func TestGetProvidersByTier(t *testing.T) {
+	ResetCache()
+	t.Cleanup(ResetCache)
+
 	type attr struct {
 		Namespace string `json:"namespace"`
 		Name      string `json:"name"`

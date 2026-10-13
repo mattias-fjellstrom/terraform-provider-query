@@ -21,6 +21,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (resources, data sources, ephemeral resources, actions, functions,
   guides, overview), fuzzy-filter with `/`, and render any page in a
   scrollable Markdown viewport
+- In-memory session cache for provider lists, versions, publish dates, and
+  release notes so data is only fetched once per session (failed requests
+  are not cached)
 
 ### Changed
 - TUI browse view no longer fetches community-tier providers; only official and partner providers are listed
