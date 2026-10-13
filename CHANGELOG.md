@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-13
+
+### Added
+- `--json` flag that prints the provider configuration in Terraform JSON
+  syntax (e.g. `tpq --json aws azurerm tfe > providers.tf.json`)
+
+### Changed
+- Generating provider configuration no longer requires `--hcl`: passing
+  providers (`tpq aws azurerm tfe`) prints HCL by default
+- Flags may now appear after the providers (e.g. `tpq aws tfe --json`)
+
 ## [0.8.0] - 2026-10-13
 
 ### Added

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattias-fjellstrom/terraform-provider-query/internal/hcl"
@@ -16,33 +17,44 @@ var version = "dev"
 
 func main() {
 	showVersion := flag.Bool("version", false, "print the version and exit")
-	genHCL := flag.Bool("hcl", false, "print a terraform block pinning the latest versions of the given providers,\nplus a provider block for each, and exit (e.g. tpq --hcl aws azurerm integrations/github)")
+	genHCL := flag.Bool("hcl", false, "print the configuration in HCL syntax (default)")
+	genJSON := flag.Bool("json", false, "print the configuration in Terraform JSON syntax")
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
-		fmt.Fprintf(out, "Usage:\n  tpq                       open the terminal UI\n  tpq --hcl PROVIDER...     print Terraform configuration for the given providers\n\nFlags:\n")
+		fmt.Fprintf(out, "Usage:\n"+
+			"  tpq                         open the terminal UI\n"+
+			"  tpq [--hcl|--json] PROVIDER...\n"+
+			"                              print a terraform block pinning the latest versions\n"+
+			"                              of the given providers, plus a provider block for\n"+
+			"                              each, and exit (e.g. tpq aws azurerm integrations/github)\n"+
+			"\nFlags may appear before or after the providers.\n\nFlags:\n")
 		flag.PrintDefaults()
 	}
-	flag.Parse()
+	args, _ := parseArgs(flag.CommandLine, os.Args[1:])
 
 	if *showVersion {
 		fmt.Println(version)
 		return
 	}
 
-	if *genHCL {
-		providers, err := hcl.Resolve(flag.Args(), registry.GetLatestVersion)
+	if *genHCL && *genJSON {
+		fmt.Fprintln(os.Stderr, "error: --hcl and --json are mutually exclusive")
+		flag.Usage()
+		os.Exit(2)
+	}
+
+	if len(args) > 0 || *genHCL || *genJSON {
+		providers, err := hcl.Resolve(args, registry.GetLatestVersion)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Print(hcl.Generate(providers))
+		if *genJSON {
+			fmt.Print(hcl.GenerateJSON(providers))
+		} else {
+			fmt.Print(hcl.Generate(providers))
+		}
 		return
-	}
-
-	if flag.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "error: unexpected arguments %v (did you mean --hcl?)\n", flag.Args())
-		flag.Usage()
-		os.Exit(2)
 	}
 
 	m := tui.New()
@@ -51,4 +63,27 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// parseArgs parses flags in args using fs and returns the positional
+// arguments. Unlike fs.Parse, flags may be interleaved with positional
+// arguments (e.g. "aws --json tfe"). Everything after a "--" terminator is
+// treated as positional.
+func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
+	var rest []string
+	if i := slices.Index(args, "--"); i >= 0 {
+		args, rest = args[:i], args[i+1:]
+	}
+	var positional []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		if fs.NArg() == 0 {
+			break
+		}
+		positional = append(positional, fs.Arg(0))
+		args = fs.Args()[1:]
+	}
+	return append(positional, rest...), nil
 }
