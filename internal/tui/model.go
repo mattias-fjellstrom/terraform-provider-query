@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattias-fjellstrom/terraform-provider-query/internal/registry"
 )
@@ -73,7 +72,7 @@ type versionsLoadedMsg struct {
 
 // releaseNotesLoadedMsg carries release notes for a version.
 type releaseNotesLoadedMsg struct {
-	notes string
+	notes string // rendered for the terminal
 	err   error
 }
 
@@ -149,6 +148,9 @@ type Model struct {
 	statusMsg     string
 	width, height int
 
+	// markdownStyle is the glamour style used for release notes, detected
+	// once at startup.
+	markdownStyle string
 }
 
 func New() Model {
@@ -189,6 +191,7 @@ func New() Model {
 			registry.TierPartnerPremier: true,
 			registry.TierPartner:        true,
 		},
+		markdownStyle: detectMarkdownStyle(),
 	}
 }
 
@@ -327,7 +330,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if item, ok := m.versionList.SelectedItem().(versionItem); ok {
 					m.selectedVer = item.version.Version
 					m.state = stateLoading
-					return m, tea.Batch(m.spinner.Tick, fetchReleaseNotes(m.namespace, m.providerName, m.selectedVer))
+					return m, tea.Batch(m.spinner.Tick, fetchReleaseNotes(m.namespace, m.providerName, m.selectedVer, m.markdownStyle))
 				}
 			}
 
@@ -385,11 +388,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errorMsg = msg.err.Error()
 			return m, nil
 		}
-		rendered, err := glamour.Render(msg.notes, "auto")
-		if err != nil {
-			rendered = msg.notes
-		}
-		m.viewport.SetContent(rendered)
+		m.viewport.SetContent(msg.notes)
 		m.viewport.GotoTop()
 		m.state = stateReleaseNotes
 		m.errorMsg = ""
@@ -539,10 +538,15 @@ func fetchVersions(namespace, providerName string) tea.Cmd {
 	}
 }
 
-func fetchReleaseNotes(namespace, providerName, version string) tea.Cmd {
+// fetchReleaseNotes fetches and renders release notes off the UI goroutine so
+// the event loop is never blocked by network or rendering work.
+func fetchReleaseNotes(namespace, providerName, version, markdownStyle string) tea.Cmd {
 	return func() tea.Msg {
 		notes, err := registry.GetReleaseNotes(namespace, providerName, version)
-		return releaseNotesLoadedMsg{notes: notes, err: err}
+		if err != nil {
+			return releaseNotesLoadedMsg{err: err}
+		}
+		return releaseNotesLoadedMsg{notes: renderMarkdown(notes, markdownStyle)}
 	}
 }
 
