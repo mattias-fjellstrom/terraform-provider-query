@@ -86,9 +86,12 @@ Launch `tpq` to open the terminal UI:
 tpq
 ```
 
-`tpq` is a TUI-only application — there are no command-line lookup modes or
-flags for one-shot queries. The only flags are `--version` (print the version
-and exit) and `--help`.
+Besides the TUI, `tpq` supports a few flags:
+
+- `--hcl PROVIDER...` — print Terraform configuration for the given providers
+  and exit (see [Generate provider configuration](#generate-provider-configuration)).
+- `--version` — print the version and exit.
+- `--help` — show usage.
 
 The TUI opens to a **browse** screen with a search input and a list of
 official, partner-premier, and partner providers from the Terraform Registry, grouped by tier
@@ -109,6 +112,55 @@ Provider lists, versions, publish dates, and release notes are cached in
 memory for the rest of the session, so revisiting a provider or version is
 instant and doesn't make additional API requests. Failed requests are not
 cached and will be retried the next time. Restart `tpq` to fetch fresh data.
+
+### Generate provider configuration
+
+Run `tpq --hcl` followed by one or more providers to print a `terraform`
+block that pins each provider to its latest stable version, plus an empty
+`provider` block for each one. Providers without a namespace default to
+`hashicorp`; use `namespace/name` for others (e.g. `integrations/github`).
+
+```bash
+tpq --hcl aws azurerm tfe
+```
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "6.68.0"
+    }
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "5.9.0"
+    }
+    tfe = {
+      source  = "hashicorp/tfe"
+      version = "0.82.0"
+    }
+  }
+}
+
+provider "aws" {
+  # add configuration here
+}
+
+provider "azurerm" {
+  # add configuration here
+}
+
+provider "tfe" {
+  # add configuration here
+}
+```
+
+The configuration is written to standard output (errors go to standard
+error), so you can redirect it straight into a file:
+
+```bash
+tpq --hcl aws azurerm tfe > providers.tf
+```
 
 ### GitHub authentication (optional)
 

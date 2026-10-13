@@ -24,6 +24,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - In-memory session cache for provider lists, versions, publish dates, and
   release notes so data is only fetched once per session (failed requests
   are not cached)
+- `--hcl PROVIDER...` one-shot mode that prints a `terraform` block pinning
+  the latest stable versions of the given providers, plus a `provider` block
+  for each (e.g. `tpq --hcl aws azurerm tfe > providers.tf`)
 
 ### Fixed
 - Opening release notes could hang on the loading screen for several
