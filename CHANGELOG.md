@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-13
+
 ### Added
 - `--json` flag that prints the provider configuration in Terraform JSON
   syntax (e.g. `tpq --json aws azurerm tfe > providers.tf.json`)
