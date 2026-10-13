@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-13
+
+### Added
+- `--hcl PROVIDER...` one-shot mode that prints a `terraform` block pinning
+  the latest stable versions of the given providers, plus a `provider` block
+  for each (e.g. `tpq --hcl aws azurerm tfe > providers.tf`)
+
+## [0.7.0] - 2026-10-13
+
+### Added
+- In-memory session cache for provider lists, versions, publish dates, and
+  release notes so data is only fetched once per session (failed requests
+  are not cached)
+
+### Fixed
+- Opening release notes could hang on the loading screen for several
+  seconds, even for cached notes: Markdown rendering re-detected the
+  terminal background on every render, racing Bubble Tea for stdin. The
+  style is now detected once at startup and rendering happens off the UI
+  thread
+
+## [0.6.0] - 2026-04-30
+
 ### Added
 - MIT license
 - `CONTRIBUTING.md` contributor guide
@@ -21,22 +44,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (resources, data sources, ephemeral resources, actions, functions,
   guides, overview), fuzzy-filter with `/`, and render any page in a
   scrollable Markdown viewport
-- In-memory session cache for provider lists, versions, publish dates, and
-  release notes so data is only fetched once per session (failed requests
-  are not cached)
-- `--hcl PROVIDER...` one-shot mode that prints a `terraform` block pinning
-  the latest stable versions of the given providers, plus a `provider` block
-  for each (e.g. `tpq --hcl aws azurerm tfe > providers.tf`)
-
-### Fixed
-- Opening release notes could hang on the loading screen for several
-  seconds, even for cached notes: Markdown rendering re-detected the
-  terminal background on every render, racing Bubble Tea for stdin. The
-  style is now detected once at startup and rendering happens off the UI
-  thread
+- TUI browse view now also lists providers from HashiCorp's new
+  `partner-premier` tier, ranked between official and partner with a
+  distinct badge
 
 ### Changed
-- TUI browse view no longer fetches community-tier providers; only official and partner providers are listed
+- TUI browse view no longer fetches community-tier providers; only
+  official, partner-premier, and partner providers are listed
 
 ### Removed
 - TUI usage snippet view (`u` shortcut from the version list)
