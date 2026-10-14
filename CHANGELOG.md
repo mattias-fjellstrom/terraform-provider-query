@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `tpq check` command that reports which providers in the Terraform
+  configuration in the current directory (`*.tf` and `*.tf.json`) are not
+  pinned to their latest versions
+- `tpq check --upgrade` rewrites those version constraints in place to pin
+  the latest versions, changing nothing else in the files. This is an
+  opinionated approach that prefers exact version pins
+
 ## [0.9.0] - 2026-10-13
 
 ### Added
