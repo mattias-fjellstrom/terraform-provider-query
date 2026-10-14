@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-14
+
 ### Added
 - `tpq check` command that reports which providers in the Terraform
   configuration in the current directory (`*.tf` and `*.tf.json`) are not
