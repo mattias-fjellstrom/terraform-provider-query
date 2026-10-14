@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattias-fjellstrom/terraform-provider-query/internal/check"
 	"github.com/mattias-fjellstrom/terraform-provider-query/internal/hcl"
 	"github.com/mattias-fjellstrom/terraform-provider-query/internal/registry"
 	"github.com/mattias-fjellstrom/terraform-provider-query/internal/tui"
@@ -16,6 +17,10 @@ import (
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "check" {
+		os.Exit(runCheck(os.Args[2:]))
+	}
+
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	genHCL := flag.Bool("hcl", false, "print the configuration in HCL syntax (default)")
 	genJSON := flag.Bool("json", false, "print the configuration in Terraform JSON syntax")
@@ -27,6 +32,9 @@ func main() {
 			"                              print a terraform block pinning the latest versions\n"+
 			"                              of the given providers, plus a provider block for\n"+
 			"                              each, and exit (e.g. tpq aws azurerm integrations/github)\n"+
+			"  tpq check [--upgrade]       report outdated provider versions in the Terraform\n"+
+			"                              configuration in the current directory; --upgrade\n"+
+			"                              pins them to the latest versions\n"+
 			"\nFlags may appear before or after the providers.\n\nFlags:\n")
 		flag.PrintDefaults()
 	}
@@ -63,6 +71,35 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// runCheck implements "tpq check" and returns the process exit code.
+func runCheck(args []string) int {
+	fs := flag.NewFlagSet("tpq check", flag.ContinueOnError)
+	upgrade := fs.Bool("upgrade", false, "pin outdated and unpinned providers to their latest versions")
+	fs.Usage = func() {
+		out := fs.Output()
+		fmt.Fprintf(out, "Usage:\n"+
+			"  tpq check [--upgrade]\n\n"+
+			"Report the providers in the Terraform configuration in the current directory\n"+
+			"whose version constraints are not pinned to the latest available version.\n"+
+			"With --upgrade, rewrite those constraints in place to pin the latest versions.\n"+
+			"\nFlags:\n")
+		fs.PrintDefaults()
+	}
+	rest, err := parseArgs(fs, args)
+	if err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
+	if len(rest) > 0 {
+		fmt.Fprintf(os.Stderr, "error: unexpected arguments: %v\n", rest)
+		fs.Usage()
+		return 2
+	}
+	return check.Run(".", *upgrade, registry.GetLatestVersion, os.Stdout, os.Stderr)
 }
 
 // parseArgs parses flags in args using fs and returns the positional
