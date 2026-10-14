@@ -2,7 +2,9 @@ package check
 
 import (
 	"fmt"
+	"github.com/hashicorp/go-version"
 	"io"
+	"strings"
 	"text/tabwriter"
 )
 
@@ -40,6 +42,37 @@ func Run(dir string, upgrade bool, latest LatestVersionFunc, stdout, stderr io.W
 	return reportErrors(stderr, results)
 }
 
+func classifyVersionLag(constraint, latest string) string {
+	pinned, err := version.NewVersion(strings.TrimSpace(
+		strings.TrimPrefix(strings.TrimSpace(constraint), "="),
+	))
+	if err != nil {
+		return "outdated"
+	}
+
+	latestVersion, err := version.NewVersion(latest)
+	if err != nil {
+		return "outdated"
+	}
+
+	pinnedParts := pinned.Segments()
+	latestParts := latestVersion.Segments()
+
+	if pinnedParts[0] != latestParts[0] {
+		return "major_lag"
+	}
+
+	if pinnedParts[1] != latestParts[1] {
+		return "feature_lag"
+	}
+
+	if pinnedParts[2] != latestParts[2] {
+		return "patch_lag"
+	}
+
+	return "outdated"
+}
+
 func writeReport(w io.Writer, results []Result) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "PROVIDER\tCONSTRAINT\tLATEST\tSTATUS\tLOCATION")
@@ -53,7 +86,13 @@ func writeReport(w io.Writer, results []Result) {
 		if latest == "" {
 			latest = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", r.Source(), constraint, latest, r.Status, r.Location())
+		status := r.Status.String()
+
+		if r.Status == Outdated {
+			status = classifyVersionLag(r.Constraint, r.Latest)
+		}
+
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", r.Source(), constraint, latest, status, r.Location())
 		if r.Status.Upgradable() {
 			upgradable++
 		}
